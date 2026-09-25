@@ -121,6 +121,15 @@ rain{3h}, snow{3h}, pop, visibility, clouds{all}}`.
    - 2.5 (fake appid): `{"cod":401,"message":"Invalid API key…"}`.
 5. The free 2.5 method through SwytchCode also returns 401.
 
+6. The raw key was confirmed working directly against `/data/2.5/weather` and `/data/2.5/forecast` (200),
+   while the same SwytchCode call still returns 401. Key and plan are therefore fine.
+7. No config controls where the credential goes: `tooling.json` has no auth fields
+   (`integrations.OpenWeather.openweather = {"version":"2.0.0"}`, tool entries hold only
+   `desc/inputs/output/integration/method_hash/summary/type`); `swy info` shows only
+   `Auth: {provider_slug, type: "api_key"}`; there is no `swy auth show`; every method in both
+   OpenWeather bundles declares `SECURITY: []`; the only non-empty `SECURITY` blocks in any installed
+   bundle are OAuth2 scopes. Credentials live in the CLI-managed `~/.swytchcode/credentials.db`.
+
 **Conclusion.** The stored key never reaches OpenWeather: OpenWeather authenticates with the
 `appid` query parameter only, and the CLI puts the managed key in an `Authorization` header. This is
 independent of plan, because the free 2.5 endpoint fails the same way. Separately, One Call 4.0 needs a
