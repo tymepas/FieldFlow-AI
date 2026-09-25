@@ -4,11 +4,12 @@
  *
  *   npx tsx scripts/read-loop.ts
  */
+import "dotenv/config";
 import { readActivities } from "../src/integrations/notion.ts";
 import { decide } from "../src/decision/engine.ts";
-import { MockWeatherProvider } from "../src/weather/mock.ts";
+import { getWeatherProvider } from "../src/weather/index.ts";
 
-const weather = new MockWeatherProvider();
+const weather = getWeatherProvider();
 const activities = await readActivities();
 console.log(`notion.query.create → ${activities.length} activities loaded\n`);
 

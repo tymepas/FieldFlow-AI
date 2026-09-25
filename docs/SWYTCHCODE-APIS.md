@@ -93,7 +93,7 @@ Errors go to stderr as `{ "error", "category", ... }` with a non-zero exit code.
   `types=private_channel` → `missing_scope groups:read` (not needed).
 - `slack.chat.postmessage.create`: no `token` input; auth injected as `Authorization`.
 
-### OpenWeather — ❌ blocked (investigation, 2026-09-25)
+### OpenWeather — ✅ working via `appid` input (approved workaround)
 Two bundles are installed: `OpenWeather.openweather@4.0.0` (One Call 4.0 only) and
 `OpenWeather.openweather@2.0.0` (adds the free-plan 2.5 API). `tooling.json` now pins 2.0.0.
 
@@ -137,11 +137,25 @@ paid "One Call by Call" subscription, so `openweather.2.5.forecast.list` is the 
 works. Key validity and units cannot be verified until a call succeeds. Weather uses the
 `MockWeatherProvider` in the meantime.
 
+### OpenWeather resolution (approved)
+The key is read from the gitignored `.env` (`OPENWEATHER_API_KEY`) and passed as the `appid` input to the
+same SwytchCode method, `openweather.2.5.forecast.list`. Live result: 200, Gurgaon, `cnt` 40 slots.
+Error messages are passed through `redact()` in `src/swytch.ts` because the CLI echoes request args to stderr.
+
+**Units verified live** (same slot requested with each `units` value):
+
+| Field | `metric` | Evidence |
+|---|---|---|
+| `main.temp` | °C | standard 303.35 − metric 30.20 = 273.15; imperial 86.36 = 30.20 × 9/5 + 32 |
+| `wind.speed`, `wind.gust` | m/s | imperial ÷ metric = 2.238 (mph per m/s = 2.237); standard = metric |
+| `rain.3h` | mm per 3 h slot | identical in all unit systems (0.59); OpenWeather documents it as mm |
+| `dt` / `dt_txt` | unix s / UTC | `city.timezone` = 19800 s (+05:30) |
+
 ## Status
 
 | Check | Result |
 |---|---|
 | Notion read | ✅ |
 | Slack read (auth.test, conversations.list) | ✅ |
-| OpenWeather read | ❌ 401 — managed key sent as header, not `appid`; mock weather in use |
+| OpenWeather read | ✅ `openweather.2.5.forecast.list` with `appid` from `.env` |
 | Gmail | ⏸ not connected (deferred by decision) |

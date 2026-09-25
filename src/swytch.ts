@@ -21,6 +21,18 @@ export class ToolCallError extends Error {
 }
 
 /**
+ * The CLI echoes request args (and URLs with query params) into its stderr,
+ * which ends up in error messages. Mask every *_API_KEY value from the env.
+ */
+export function redact(text: string): string {
+  let out = text;
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.endsWith("_API_KEY") && v && v.length >= 8) out = out.split(v).join("<REDACTED>");
+  }
+  return out;
+}
+
+/**
  * Execute a Swytchcode tool and return the provider payload (`data`).
  * Provider/CLI errors are rethrown as ToolCallError with the CLI's error
  * category — never swallowed.
@@ -30,12 +42,13 @@ export async function callTool<T = any>(canonicalId: string, args: Record<string
   try {
     result = (await exec(canonicalId, args, { timeoutMs: 60_000 })) as ExecEnvelope<T>;
   } catch (e) {
+    const message = redact(e instanceof Error ? e.message : String(e));
     if (isSwytchcodeError(e)) {
       // The CLI's classified error is embedded in the message alongside log lines.
-      const classified = e.message.match(/\{"error":"(.*?)","category":"(\w+)"/);
-      throw new ToolCallError(canonicalId, classified?.[1] ?? e.message, classified?.[2] ?? e.details?.category);
+      const classified = message.match(/\{"error":"(.*?)","category":"(\w+)"/);
+      throw new ToolCallError(canonicalId, classified?.[1] ?? message, classified?.[2] ?? e.details?.category);
     }
-    throw e;
+    throw new ToolCallError(canonicalId, message);
   }
   return result.data;
 }
