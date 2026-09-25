@@ -1,0 +1,74 @@
+[
+  {
+    "activity_id": "FA-101",
+    "activity_name": "Rooftop solar panel installation",
+    "location": "Gurgaon",
+    "date": "2026-09-26",
+    "start_time": "14:00",
+    "activity_type": "outdoor_installation",
+    "priority": "high",
+    "stakeholder": "Priya Sharma (SunGrid Energy)",
+    "status": "planned",
+    "notes": "Crane booked 13:30-18:00. Client site manager on-site."
+  },
+  {
+    "activity_id": "FA-102",
+    "activity_name": "Construction site safety inspection",
+    "location": "Noida",
+    "date": "2026-09-26",
+    "start_time": "10:00",
+    "activity_type": "outdoor_inspection",
+    "priority": "medium",
+    "stakeholder": "",
+    "status": "planned",
+    "notes": "Scaffolding and perimeter fencing check, Sector 62."
+  },
+  {
+    "activity_id": "FA-103",
+    "activity_name": "Telecom antenna mounting",
+    "location": "Faridabad",
+    "date": "2026-09-26",
+    "start_time": "11:00",
+    "activity_type": "outdoor_installation",
+    "priority": "high",
+    "stakeholder": "Rahul Mehta (TowerLink Infra)",
+    "status": "planned",
+    "notes": "Two-person climb team. Tower access window 10:30-15:00."
+  },
+  {
+    "activity_id": "FA-104",
+    "activity_name": "Warehouse inventory audit",
+    "location": "New Delhi",
+    "date": "2026-09-26",
+    "start_time": "09:30",
+    "activity_type": "indoor",
+    "priority": "low",
+    "stakeholder": "",
+    "status": "planned",
+    "notes": "Okhla warehouse, quarterly stock count."
+  },
+  {
+    "activity_id": "FA-105",
+    "activity_name": "Water pipeline route inspection",
+    "location": "Jaipur",
+    "date": "2026-09-26",
+    "start_time": "13:00",
+    "activity_type": "outdoor_inspection",
+    "priority": "medium",
+    "stakeholder": "",
+    "status": "planned",
+    "notes": "4 km route survey along the ring road."
+  },
+  {
+    "activity_id": "FA-106",
+    "activity_name": "Client control-room commissioning",
+    "location": "Mumbai",
+    "date": "2026-09-26",
+    "start_time": "15:00",
+    "activity_type": "indoor",
+    "priority": "high",
+    "stakeholder": "Anita Desai (HarborGrid Utilities)",
+    "status": "planned",
+    "notes": "Indoor SCADA handover, client engineers attending."
+  }
+]

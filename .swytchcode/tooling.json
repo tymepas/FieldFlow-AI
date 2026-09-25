@@ -8,7 +8,7 @@
       "version": "2.0.0"
     },
     "OpenWeather.openweather": {
-      "version": "4.0.0"
+      "version": "2.0.0"
     },
     "Slack.slack": {
       "version": "1.7.0"
@@ -718,6 +718,185 @@
       "summary": "Retrieve block children",
       "type": "method"
     },
+    "notion.data_source.get": {
+      "desc": "Retrieve metadata and schema for a data source",
+      "inputs": [
+        {
+          "data_source_id": {
+            "LOCATION": "path",
+            "REQUIRED": true,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "Notion-Version": {
+            "DEFAULT": "2025-09-03",
+            "LOCATION": "header",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "Notion.notion@2.0.0",
+      "method_hash": "5890c46e9d6c02cf472201eae4bab88d0480f0011018bdaa0a1de18e9e5325de",
+      "output": {
+        "schema": {
+          "properties": {
+            "value": {
+              "required": false,
+              "type": "any"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "Retrieve a data source",
+      "type": "method"
+    },
+    "notion.databas.get": {
+      "desc": "Retrieves a database object using the ID specified. Returns database metadata including the list of data source IDs contained in the database.",
+      "inputs": [
+        {
+          "database_id": {
+            "LOCATION": "path",
+            "REQUIRED": true,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "Notion-Version": {
+            "DEFAULT": "2025-09-03",
+            "LOCATION": "header",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "Notion.notion@2.0.0",
+      "method_hash": "5728c85a656c34505926970e789808bd88c55cefff2d0b7274fc4bf5c8e626f9",
+      "output": {
+        "schema": {
+          "properties": {
+            "value": {
+              "required": false,
+              "type": "any"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "Retrieve a database",
+      "type": "method"
+    },
+    "notion.page.create": {
+      "desc": "",
+      "inputs": [
+        {
+          "Notion-Version": {
+            "DEFAULT": "2025-09-03",
+            "LOCATION": "header",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "body": {
+            "CONTENT_TYPE": "application/json",
+            "LOCATION": "body",
+            "REQUIRED": false,
+            "TYPE": "OBJECT",
+            "schema": {
+              "properties": {
+                "children": {
+                  "required": false,
+                  "type": "[]STRING"
+                },
+                "cover": {
+                  "required": false,
+                  "type": "string"
+                },
+                "icon": {
+                  "required": false,
+                  "type": "string"
+                },
+                "parent": {
+                  "properties": {
+                    "_COMPOSITION": {
+                      "required": false,
+                      "type": "ONE_OF"
+                    },
+                    "variant_2": {
+                      "properties": {
+                        "type": {
+                          "required": true,
+                          "type": "any"
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "variant_dataSourceIdParentRequest": {
+                      "properties": {
+                        "database_id": {
+                          "required": true,
+                          "type": "string"
+                        },
+                        "type": {
+                          "required": false,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "database_id"
+                      ],
+                      "type": "object"
+                    },
+                    "variant_pageIdParentRequest": {
+                      "properties": {
+                        "page_id": {
+                          "required": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "page_id"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "properties": {
+                  "required": true,
+                  "type": "map[STRING]ANY"
+                }
+              },
+              "required": [
+                "parent",
+                "properties"
+              ]
+            }
+          }
+        }
+      ],
+      "integration": "Notion.notion@2.0.0",
+      "method_hash": "76323194220d5fe7b92ac67d425a8e7de239b2178cb23019ff53228cff674770",
+      "output": {
+        "schema": {
+          "properties": {
+            "value": {
+              "required": false,
+              "type": "any"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "Create a page",
+      "type": "method"
+    },
     "notion.page.update": {
       "desc": "",
       "inputs": [
@@ -989,6 +1168,334 @@
         "status": 200
       },
       "summary": "Search by title",
+      "type": "method"
+    },
+    "openweather.2.5.forecast.list": {
+      "desc": "Forecast in 3-hour steps for the next 5 days (up to 40 entries). Available on the free plan.",
+      "inputs": [
+        {
+          "lat": {
+            "FORMAT": "double",
+            "LOCATION": "query",
+            "MAXIMUM": 90,
+            "MINIMUM": -90,
+            "REQUIRED": true,
+            "TYPE": "FLOAT"
+          }
+        },
+        {
+          "lon": {
+            "FORMAT": "double",
+            "LOCATION": "query",
+            "MAXIMUM": 180,
+            "MINIMUM": -180,
+            "REQUIRED": true,
+            "TYPE": "FLOAT"
+          }
+        },
+        {
+          "cnt": {
+            "LOCATION": "query",
+            "MAXIMUM": 40,
+            "MINIMUM": 1,
+            "REQUIRED": false,
+            "TYPE": "INT"
+          }
+        },
+        {
+          "units": {
+            "DEFAULT": "standard",
+            "ENUM": [
+              "standard",
+              "metric",
+              "imperial"
+            ],
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "lang": {
+            "ENUM": [
+              "sq",
+              "af",
+              "ar",
+              "az",
+              "eu",
+              "be",
+              "bg",
+              "ca",
+              "zh_cn",
+              "zh_tw",
+              "hr",
+              "cz",
+              "da",
+              "nl",
+              "en",
+              "fi",
+              "fr",
+              "gl",
+              "de",
+              "el",
+              "he",
+              "hi",
+              "hu",
+              "is",
+              "id",
+              "it",
+              "ja",
+              "kr",
+              "ku",
+              "la",
+              "lt",
+              "mk",
+              "no",
+              "fa",
+              "pl",
+              "pt",
+              "pt_br",
+              "ro",
+              "ru",
+              "sr",
+              "sk",
+              "sl",
+              "sp",
+              "es",
+              "sv",
+              "se",
+              "th",
+              "tr",
+              "ua",
+              "uk",
+              "vi",
+              "zu"
+            ],
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "appid": {
+            "LOCATION": "query",
+            "REQUIRED": true,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "OpenWeather.openweather@2.0.0",
+      "method_hash": "898ca1cc485b3e7326f5c26e90fc64164f49af40dbda3a7b153ba92a83514ae5",
+      "output": {
+        "schema": {
+          "properties": {
+            "city": {
+              "properties": {
+                "coord": {
+                  "properties": {
+                    "lat": {
+                      "required": false,
+                      "type": "FLOAT"
+                    },
+                    "lon": {
+                      "required": false,
+                      "type": "FLOAT"
+                    }
+                  },
+                  "type": "object"
+                },
+                "country": {
+                  "required": false,
+                  "type": "string"
+                },
+                "id": {
+                  "required": false,
+                  "type": "integer"
+                },
+                "name": {
+                  "required": false,
+                  "type": "string"
+                },
+                "population": {
+                  "required": false,
+                  "type": "integer"
+                },
+                "sunrise": {
+                  "required": false,
+                  "type": "integer"
+                },
+                "sunset": {
+                  "required": false,
+                  "type": "integer"
+                },
+                "timezone": {
+                  "required": false,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "cnt": {
+              "required": false,
+              "type": "integer"
+            },
+            "cod": {
+              "required": false,
+              "type": "string"
+            },
+            "list": {
+              "items": {
+                "properties": {
+                  "clouds": {
+                    "properties": {
+                      "all": {
+                        "required": false,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "dt": {
+                    "required": false,
+                    "type": "integer"
+                  },
+                  "dt_txt": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "main": {
+                    "properties": {
+                      "feels_like": {
+                        "required": false,
+                        "type": "FLOAT"
+                      },
+                      "grnd_level": {
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "humidity": {
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "pressure": {
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "sea_level": {
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "temp": {
+                        "required": false,
+                        "type": "FLOAT"
+                      },
+                      "temp_kf": {
+                        "required": false,
+                        "type": "FLOAT"
+                      },
+                      "temp_max": {
+                        "required": false,
+                        "type": "FLOAT"
+                      },
+                      "temp_min": {
+                        "required": false,
+                        "type": "FLOAT"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "pop": {
+                    "required": false,
+                    "type": "FLOAT"
+                  },
+                  "rain": {
+                    "properties": {
+                      "3h": {
+                        "required": false,
+                        "type": "FLOAT"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "snow": {
+                    "properties": {
+                      "3h": {
+                        "required": false,
+                        "type": "FLOAT"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "sys": {
+                    "properties": {
+                      "pod": {
+                        "required": false,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "visibility": {
+                    "required": false,
+                    "type": "integer"
+                  },
+                  "weather": {
+                    "items": {
+                      "properties": {
+                        "description": {
+                          "required": false,
+                          "type": "string"
+                        },
+                        "icon": {
+                          "required": false,
+                          "type": "string"
+                        },
+                        "id": {
+                          "required": false,
+                          "type": "integer"
+                        },
+                        "main": {
+                          "required": false,
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "required": false,
+                    "type": "array"
+                  },
+                  "wind": {
+                    "properties": {
+                      "deg": {
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "gust": {
+                        "required": false,
+                        "type": "FLOAT"
+                      },
+                      "speed": {
+                        "required": false,
+                        "type": "FLOAT"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              },
+              "required": false,
+              "type": "array"
+            },
+            "message": {
+              "required": false,
+              "type": "FLOAT"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "5 day / 3 hour forecast (2.5)",
       "type": "method"
     },
     "openweather_one_call_4_0.1h.list": {

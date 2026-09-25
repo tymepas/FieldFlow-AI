@@ -93,14 +93,40 @@ Errors go to stderr as `{ "error", "category", ... }` with a non-zero exit code.
   `types=private_channel` → `missing_scope groups:read` (not needed).
 - `slack.chat.postmessage.create`: no `token` input; auth injected as `Authorization`.
 
-### OpenWeather — ❌ 401 through managed auth
-- Validation requires `appid` even though auth is managed (`api_key`).
-- Dry-run shows the CLI injects the managed key as an **`Authorization` header** and sends
-  `appid` literally in the query string:
-  `GET https://api.openweathermap.org/data/4.0/onecall/timeline/1h?appid=<input>&lat=…&lon=…&units=metric`
-- OpenWeather authenticates via the `appid` query parameter, so the live call returns
-  **401** (`authorization failed for OpenWeather (401)`).
-- Units/fields cannot be verified until a live call succeeds.
+### OpenWeather — ❌ blocked (investigation, 2026-09-25)
+Two bundles are installed: `OpenWeather.openweather@4.0.0` (One Call 4.0 only) and
+`OpenWeather.openweather@2.0.0` (adds the free-plan 2.5 API). `tooling.json` now pins 2.0.0.
+
+| Method | Endpoint | Plan (per `swy info` / OpenWeather) |
+|---|---|---|
+| `openweather_one_call_4_0.1h.list` | `GET /data/4.0/onecall/timeline/1h` | One Call by Call subscription |
+| `openweather.2.5.forecast.list` | `GET /data/2.5/forecast` (5 day / 3 h) | "Available on the free plan" |
+
+`openweather.2.5.forecast.list` inputs: `lat`, `lon` (required), `cnt` (1–40), `units`
+(`standard`|`metric`|`imperial`), `lang`, `appid` (required). Output: `city{coord,timezone,…}`,
+`list[]{dt, dt_txt, main{temp,feels_like,humidity,…}, weather[]{id,main,description}, wind{speed,gust,deg},
+rain{3h}, snow{3h}, pop, visibility, clouds{all}}`.
+
+**Findings**
+1. Both methods fail CLI validation without an `appid` input, although auth is managed (`api_key`).
+2. Dry-run shows the managed key is injected as an `Authorization` header; `appid` is sent verbatim
+   in the query string (`…?appid=<input>&lat=…`).
+3. The CLI replaces the provider body with its own message
+   (`authorization failed for OpenWeather (401) - the connection may be revoked`); `--raw` and
+   `--verbose` do not reveal it. `swy audit network` records only status/bytes.
+4. Provider bodies, fetched directly with **no credential** for comparison:
+   - 4.0 timeline (fake or missing appid): `{"cod":401,"message":"Please note that using One Call 4.0
+     requires a separate subscription to the One Call by Call plan…"}` — OpenWeather returns this same
+     text for a missing key, so it cannot distinguish "no key" from "no subscription".
+   - 2.5 (fake appid): `{"cod":401,"message":"Invalid API key…"}`.
+5. The free 2.5 method through SwytchCode also returns 401.
+
+**Conclusion.** The stored key never reaches OpenWeather: OpenWeather authenticates with the
+`appid` query parameter only, and the CLI puts the managed key in an `Authorization` header. This is
+independent of plan, because the free 2.5 endpoint fails the same way. Separately, One Call 4.0 needs a
+paid "One Call by Call" subscription, so `openweather.2.5.forecast.list` is the right method once auth
+works. Key validity and units cannot be verified until a call succeeds. Weather uses the
+`MockWeatherProvider` in the meantime.
 
 ## Status
 
@@ -108,5 +134,5 @@ Errors go to stderr as `{ "error", "category", ... }` with a non-zero exit code.
 |---|---|
 | Notion read | ✅ |
 | Slack read (auth.test, conversations.list) | ✅ |
-| OpenWeather read | ❌ 401 — key not delivered as `appid` |
+| OpenWeather read | ❌ 401 — managed key sent as header, not `appid`; mock weather in use |
 | Gmail | ⏸ not connected (deferred by decision) |
