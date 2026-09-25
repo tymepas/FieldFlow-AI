@@ -14,8 +14,8 @@ Enabled in `.swytchcode/tooling.json` (verify with `swy list tooling`).
 | Gmail | `Gmail.gmail@v1` | `oauth2` (managed) |
 
 Managed auth means credentials are connected once with `swy auth connect <provider>`
-and injected by the CLI/runtime at exec time. Application code never reads or sets
-these credentials.
+and injected by the CLI/runtime at exec time. Exception: for OpenWeather, the application
+also passes the key from `.env` as the `appid` input (see OpenWeather below).
 
 ## Notion
 
@@ -35,17 +35,20 @@ these credentials.
 
 ## OpenWeather
 
+The method below was discovered first and is **not used by the MVP** (One Call 4.0 needs a paid
+subscription). The active method is `openweather.2.5.forecast.list`; see the verified section below.
+
 ### `openweather_one_call_4_0.1h.list` — hourly forecast
 - `GET /timeline/1h` — "Up to 20 records per page; historical data plus 48-hour forecast."
 - Inputs: `lat` (float, −90..90, **required**), `lon` (float, −180..180, **required**),
   `start` (int64, optional), `units` (`standard` | `metric` | `imperial`,
-  default `standard`), `lang` (optional), `appid` (**required**, supplied by managed auth).
+  default `standard`), `lang` (optional), `appid` (**required**).
 - Output: `lat`, `lon`, `timezone`, `timezone_offset`, `next`, `prev`, and `data[]` with
   `dt`, `temp`, `feels_like`, `humidity`, `pop`, `rain.1h`, `snow.1h`, `wind_speed`,
   `wind_gust`, `wind_deg`, `clouds`, `visibility`, `uvi`, `weather[] {id, main, description}`, `alerts[]`.
 - **Location input is coordinates only.** No geocoding method exists in this bundle.
-- **Units:** the bundle declares the `units` enum but does not state per-field units.
-  Units will be confirmed from a real response before thresholds are finalised.
+- **Units:** the bundle declares the `units` enum but does not state per-field units. Units for the
+  active 2.5 method were verified live (see "Units verified live" below).
 
 ## Slack
 
@@ -55,6 +58,8 @@ these credentials.
 - Output: `channel`, `message { … }`, …
 
 ## Gmail
+
+Not connected and not part of the current MVP; these methods are enabled in `tooling.json` only.
 
 ### `gmail.user.messages.get` — search stakeholder context
 - `GET /gmail/v1/users/{userId}/messages` (list). Inputs: `userId` (default `me`), `q`,
@@ -144,11 +149,10 @@ rain{3h}, snow{3h}, pop, visibility, clouds{all}}`.
    OpenWeather bundles declares `SECURITY: []`; the only non-empty `SECURITY` blocks in any installed
    bundle are OAuth2 scopes. Credentials live in the CLI-managed `~/.swytchcode/credentials.db`.
 
-**Conclusion.** SwytchCode's managed OpenWeather credential was observed in the Authorization header, while OpenWeather authentication for these methods requires appid. Passing the verified key explicitly as the appid input through the SwytchCode runtime produced a successful 200 response. This is
-independent of plan, because the free 2.5 endpoint fails the same way. Separately, One Call 4.0 needs a
-paid "One Call by Call" subscription, so `openweather.2.5.forecast.list` is the right method once auth
-works. Key validity and units cannot be verified until a call succeeds. Weather uses the
-`MockWeatherProvider` in the meantime.
+**Conclusion.** SwytchCode's managed OpenWeather credential was observed in the Authorization header, while OpenWeather authentication for these methods requires appid. Passing the verified key explicitly as the appid input through the SwytchCode runtime produced a successful 200 response. One Call 4.0
+needs a paid "One Call by Call" subscription, so the free-plan `openweather.2.5.forecast.list` is the
+active MVP weather method. `MockWeatherProvider` (`WEATHER_PROVIDER=mock`) remains available for
+deterministic tests and demo runs.
 
 ### OpenWeather resolution (approved)
 The key is read from the gitignored `.env` (`OPENWEATHER_API_KEY`) and passed as the `appid` input to the
