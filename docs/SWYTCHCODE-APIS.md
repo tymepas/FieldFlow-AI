@@ -9,7 +9,7 @@ Enabled in `.swytchcode/tooling.json` (verify with `swy list tooling`).
 | Integration | Provider bundle | Auth (`swy info`) |
 |---|---|---|
 | Notion | `Notion.notion@2.0.0` | `oauth2` (managed) |
-| OpenWeather | `OpenWeather.openweather@4.0.0` | `api_key` (managed) |
+| OpenWeather | `OpenWeather.openweather@2.0.0` | `api_key` (managed) |
 | Slack | `Slack.slack@1.7.0` | `oauth2` (managed) |
 | Gmail | `Gmail.gmail@v1` | `oauth2` (managed) |
 
@@ -144,8 +144,7 @@ rain{3h}, snow{3h}, pop, visibility, clouds{all}}`.
    OpenWeather bundles declares `SECURITY: []`; the only non-empty `SECURITY` blocks in any installed
    bundle are OAuth2 scopes. Credentials live in the CLI-managed `~/.swytchcode/credentials.db`.
 
-**Conclusion.** The stored key never reaches OpenWeather: OpenWeather authenticates with the
-`appid` query parameter only, and the CLI puts the managed key in an `Authorization` header. This is
+**Conclusion.** SwytchCode's managed OpenWeather credential was observed in the Authorization header, while OpenWeather authentication for these methods requires appid. Passing the verified key explicitly as the appid input through the SwytchCode runtime produced a successful 200 response. This is
 independent of plan, because the free 2.5 endpoint fails the same way. Separately, One Call 4.0 needs a
 paid "One Call by Call" subscription, so `openweather.2.5.forecast.list` is the right method once auth
 works. Key validity and units cannot be verified until a call succeeds. Weather uses the
