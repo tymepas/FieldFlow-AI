@@ -68,12 +68,45 @@ these credentials.
 
 Note: `gmail.user.send.create` is **drafts/send**, not message send, and is not used.
 
+## Verified behaviour (live calls, 2026-09-25, CLI 2.23.3)
+
+### Response envelope
+`swy exec <id> --json` returns `{ "data": <provider JSON>, "request": {method,url}, "status_code": <int> }`.
+Errors go to stderr as `{ "error", "category", ... }` with a non-zero exit code.
+
+### Notion — ✅ working (oauth2 connected)
+- `notion.search.create` with `--body {"query":"FieldFlow AI Operations"}` → 200. Found page
+  **FieldFlow AI Operations**, id `3e623caa-e128-81bf-aed0-ca92e92c83ec`, parent = workspace.
+- `notion.children.get` (`GET /v1/blocks/{block_id}/children`) → 200, 17 blocks
+  (headings/paragraphs/bullets). **No database exists on the page yet.**
+- The bundle has **no `POST /v1/databases`** method. `notion.data_source.create`
+  (`POST /v1/data_sources`) adds a data source to an *existing* database, so a new
+  database cannot be created under a page through this bundle.
+
+### Slack — ✅ working (oauth2 connected, bot token)
+- `slack.auth.test.list` → `ok:true`, team `FieldFlow-AI`, user `swytchcode`, bot `B0C4DR86746`.
+  - Quirk: validation requires a `token` input even though `Inputs: []`; any value is sent as a
+    harmless `Token` header. The real credential is injected as `Authorization`.
+- `slack.conversations.list.list`: do **not** pass `token` (it becomes a query param and
+  overrides auth → `invalid_auth`). With `types=public_channel` → `ok:true`:
+  `#all-fieldflow-ai` (C0C49GY0UKD), `#new-channel`, `#social`; bot is a member of none.
+  `types=private_channel` → `missing_scope groups:read` (not needed).
+- `slack.chat.postmessage.create`: no `token` input; auth injected as `Authorization`.
+
+### OpenWeather — ❌ 401 through managed auth
+- Validation requires `appid` even though auth is managed (`api_key`).
+- Dry-run shows the CLI injects the managed key as an **`Authorization` header** and sends
+  `appid` literally in the query string:
+  `GET https://api.openweathermap.org/data/4.0/onecall/timeline/1h?appid=<input>&lat=…&lon=…&units=metric`
+- OpenWeather authenticates via the `appid` query parameter, so the live call returns
+  **401** (`authorization failed for OpenWeather (401)`).
+- Units/fields cannot be verified until a live call succeeds.
+
 ## Status
 
 | Check | Result |
 |---|---|
-| `swy init` | ✅ project initialised |
-| Providers fetched (`swy get`) | ✅ all four |
-| Methods enabled (`swy add method`) | ✅ 7 methods |
-| Provider credentials (`swy auth status`) | ❌ "No connected accounts" |
-| Live response / unit verification | ⏳ blocked on credentials |
+| Notion read | ✅ |
+| Slack read (auth.test, conversations.list) | ✅ |
+| OpenWeather read | ❌ 401 — key not delivered as `appid` |
+| Gmail | ⏸ not connected (deferred by decision) |

@@ -667,6 +667,57 @@
       "summary": "Sends the specified message to the recipients in the `To`, `Cc`, and `Bcc` headers",
       "type": "method"
     },
+    "notion.children.get": {
+      "desc": "",
+      "inputs": [
+        {
+          "block_id": {
+            "LOCATION": "path",
+            "REQUIRED": true,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "start_cursor": {
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "page_size": {
+            "DEFAULT": 100,
+            "FORMAT": "int32",
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "INT"
+          }
+        },
+        {
+          "Notion-Version": {
+            "DEFAULT": "2025-09-03",
+            "LOCATION": "header",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "Notion.notion@2.0.0",
+      "method_hash": "89712d57739f49f4184e4283b4e77ed25122a5d30eeb3de250386ff5d25206d5",
+      "output": {
+        "schema": {
+          "properties": {
+            "value": {
+              "required": false,
+              "type": "any"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "Retrieve block children",
+      "type": "method"
+    },
     "notion.page.update": {
       "desc": "",
       "inputs": [
@@ -860,6 +911,84 @@
         "status": 200
       },
       "summary": "Query a data source",
+      "type": "method"
+    },
+    "notion.search.create": {
+      "desc": "",
+      "inputs": [
+        {
+          "Notion-Version": {
+            "DEFAULT": "2025-09-03",
+            "LOCATION": "header",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "body": {
+            "CONTENT_TYPE": "application/json",
+            "LOCATION": "body",
+            "REQUIRED": false,
+            "TYPE": "OBJECT",
+            "schema": {
+              "properties": {
+                "filter": {
+                  "properties": {
+                    "property": {
+                      "required": false,
+                      "type": "string"
+                    },
+                    "value": {
+                      "required": false,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "page_size": {
+                  "required": false,
+                  "type": "integer"
+                },
+                "query": {
+                  "required": false,
+                  "type": "string"
+                },
+                "sort": {
+                  "properties": {
+                    "direction": {
+                      "required": false,
+                      "type": "string"
+                    },
+                    "timestamp": {
+                      "required": false,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "start_cursor": {
+                  "required": false,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "integration": "Notion.notion@2.0.0",
+      "method_hash": "e8929ab37ae8a83acbf8b3b91465ba2a05fa1552bd867ba873d6372dcd1e244f",
+      "output": {
+        "schema": {
+          "properties": {
+            "value": {
+              "required": false,
+              "type": "any"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "Search by title",
       "type": "method"
     },
     "openweather_one_call_4_0.1h.list": {
@@ -1123,6 +1252,69 @@
         "status": 200
       },
       "summary": "Hourly timeline",
+      "type": "method"
+    },
+    "slack.auth.test.list": {
+      "desc": "Checks authentication \u0026 identity.",
+      "inputs": [
+        {
+          "token": {
+            "LOCATION": "header",
+            "REQUIRED": true,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "Slack.slack@1.7.0",
+      "method_hash": "7eb778224ff9e727ff1bd52bf69bbc4953d59206d482eeff9e6b15197a7f40b7",
+      "output": {
+        "schema": {
+          "properties": {
+            "bot_id": {
+              "required": false,
+              "type": "string"
+            },
+            "is_enterprise_install": {
+              "required": false,
+              "type": "boolean"
+            },
+            "ok": {
+              "required": true,
+              "type": "boolean"
+            },
+            "team": {
+              "required": true,
+              "type": "string"
+            },
+            "team_id": {
+              "required": true,
+              "type": "string"
+            },
+            "url": {
+              "required": true,
+              "type": "string"
+            },
+            "user": {
+              "required": true,
+              "type": "string"
+            },
+            "user_id": {
+              "required": true,
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok",
+            "team",
+            "team_id",
+            "url",
+            "user",
+            "user_id"
+          ]
+        },
+        "status": 200
+      },
+      "summary": "Checks authentication \u0026 identity.",
       "type": "method"
     },
     "slack.chat.postmessage.create": {
@@ -2317,6 +2509,81 @@
         "status": 200
       },
       "summary": "Sends a message to a channel.",
+      "type": "method"
+    },
+    "slack.conversations.list.list": {
+      "desc": "Lists all channels in a Slack team.",
+      "inputs": [
+        {
+          "token": {
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "exclude_archived": {
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "BOOL"
+          }
+        },
+        {
+          "types": {
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        },
+        {
+          "limit": {
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "INT"
+          }
+        },
+        {
+          "cursor": {
+            "LOCATION": "query",
+            "REQUIRED": false,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "Slack.slack@1.7.0",
+      "method_hash": "7339356ba4def8ac70b52d45ddbd05d1c46e02cb4a37a4b800e326e6c0becf04",
+      "output": {
+        "schema": {
+          "properties": {
+            "channels": {
+              "required": true,
+              "type": "[]ANY"
+            },
+            "ok": {
+              "required": true,
+              "type": "boolean"
+            },
+            "response_metadata": {
+              "properties": {
+                "next_cursor": {
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "next_cursor"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "channels",
+            "ok"
+          ]
+        },
+        "status": 200
+      },
+      "summary": "Lists all channels in a Slack team.",
       "type": "method"
     }
   },
