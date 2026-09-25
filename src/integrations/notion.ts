@@ -30,7 +30,11 @@ export interface ActivitiesTable {
 
 let cached: ActivitiesTable | undefined;
 
-/** Locate the "Field Activities" inline table on the FieldFlow page and read its schema. */
+/**
+ * Locate the "Field Activities" database on the FieldFlow page and read its schema.
+ * Both inline and full-page child databases appear as `child_database` blocks in the
+ * page's children (verified live), so scoping to the FieldFlow page covers either.
+ */
 export async function getActivitiesTable(): Promise<ActivitiesTable> {
   if (cached) return cached;
   const children = await callTool("notion.children.get", { block_id: ROOT_PAGE_ID, page_size: 100 });
@@ -38,7 +42,7 @@ export async function getActivitiesTable(): Promise<ActivitiesTable> {
     (b: any) => b.type === "child_database" && b.child_database?.title?.trim() === TABLE_TITLE,
   );
   if (!block) {
-    throw new Error(`No inline table titled "${TABLE_TITLE}" on the FieldFlow page ${ROOT_PAGE_ID}`);
+    throw new Error(`No database titled "${TABLE_TITLE}" on the FieldFlow page ${ROOT_PAGE_ID}`);
   }
   const db = await callTool("notion.databas.get", { database_id: block.id });
   const dataSourceId: string | undefined = db.data_sources?.[0]?.id;

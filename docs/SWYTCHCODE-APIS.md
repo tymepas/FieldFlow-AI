@@ -83,6 +83,17 @@ Errors go to stderr as `{ "error", "category", ... }` with a non-zero exit code.
   (`POST /v1/data_sources`) adds a data source to an *existing* database, so a new
   database cannot be created under a page through this bundle.
 
+### Notion — Field Activities database (verified live)
+- Standalone database `f538549b-89e1-4230-8161-13251101458a` under the FieldFlow page; data source
+  `2fc1f320-1949-49ab-9c38-10da5dfa7d01`. A full-page child database still appears as a
+  `child_database` block in `notion.children.get` of the parent page, so discovery is scoped to the
+  FieldFlow page: `notion.children.get` → `notion.databas.get` (`data_sources[0].id`) → `notion.data_source.get` (schema).
+- Schema: `activity_id` title; `activity_name`, `location`, `start_time`, `stakeholder`, `notes` rich_text;
+  `date` date; `activity_type`, `priority`, `status` select.
+- `notion.page.create` with `parent: {type:"data_source_id", data_source_id}` created all 6 seed rows.
+- `notion.query.create` read-back matched every field of all 6 rows.
+- `notion.page.update` (select `status` + rich_text `notes`) round-trip verified, then restored.
+
 ### Slack — ✅ working (oauth2 connected, bot token)
 - `slack.auth.test.list` → `ok:true`, team `FieldFlow-AI`, user `swytchcode`, bot `B0C4DR86746`.
   - Quirk: validation requires a `token` input even though `Inputs: []`; any value is sent as a
@@ -91,7 +102,10 @@ Errors go to stderr as `{ "error", "category", ... }` with a non-zero exit code.
   overrides auth → `invalid_auth`). With `types=public_channel` → `ok:true`:
   `#all-fieldflow-ai` (C0C49GY0UKD), `#new-channel`, `#social`; bot is a member of none.
   `types=private_channel` → `missing_scope groups:read` (not needed).
-- `slack.chat.postmessage.create`: no `token` input; auth injected as `Authorization`.
+- `slack.chat.postmessage.create`: validation requires a `token` input (sent as an inert `Token` header);
+  auth injected as `Authorization`. Live post to `#field-ops` (`C0C4L22KB52`) → `ok:true`, ts `1790341485.552639`.
+- `slack.conversations.history.list` → `missing_scope channels:history`; reading messages back is not
+  possible with the current bot scopes (not needed for the MVP).
 
 ### OpenWeather — ✅ working via `appid` input (approved workaround)
 Two bundles are installed: `OpenWeather.openweather@4.0.0` (One Call 4.0 only) and
