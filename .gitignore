@@ -8,3 +8,9 @@ dist/
 credentials*.json
 secrets*
 *.log
+
+.swytchcode/workspace.json
+
+# Swytchcode local state (reproduce bundles with `swy bootstrap`)
+.swytchcode/workspace.json
+.swytchcode/integrations/
