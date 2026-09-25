@@ -35,8 +35,7 @@ also passes the key from `.env` as the `appid` input (see OpenWeather below).
 
 ## OpenWeather
 
-The method below was discovered first and is **not used by the MVP** (One Call 4.0 needs a paid
-subscription). The active method is `openweather.2.5.forecast.list`; see the verified section below.
+OpenWeather One Call 4.0 was investigated but not used; the same Authorization-header/appid-query mismatch affects it identically to the 2.5 endpoint, and 2.5 is the free-tier method requiring no separate subscription. The active method is `openweather.2.5.forecast.list`; see the verified section below.
 
 ### `openweather_one_call_4_0.1h.list` — hourly forecast
 - `GET /timeline/1h` — "Up to 20 records per page; historical data plus 48-hour forecast."
@@ -149,8 +148,7 @@ rain{3h}, snow{3h}, pop, visibility, clouds{all}}`.
    OpenWeather bundles declares `SECURITY: []`; the only non-empty `SECURITY` blocks in any installed
    bundle are OAuth2 scopes. Credentials live in the CLI-managed `~/.swytchcode/credentials.db`.
 
-**Conclusion.** SwytchCode's managed OpenWeather credential was observed in the Authorization header, while OpenWeather authentication for these methods requires appid. Passing the verified key explicitly as the appid input through the SwytchCode runtime produced a successful 200 response. One Call 4.0
-needs a paid "One Call by Call" subscription, so the free-plan `openweather.2.5.forecast.list` is the
+**Conclusion.** SwytchCode's managed OpenWeather credential was observed in the Authorization header, while OpenWeather authentication for these methods requires appid. Passing the verified key explicitly as the appid input through the SwytchCode runtime produced a successful 200 response. OpenWeather One Call 4.0 was investigated but not used; the same Authorization-header/appid-query mismatch affects it identically to the 2.5 endpoint, and 2.5 is the free-tier method requiring no separate subscription. `openweather.2.5.forecast.list` is the
 active MVP weather method. `MockWeatherProvider` (`WEATHER_PROVIDER=mock`) remains available for
 deterministic tests and demo runs.
 
