@@ -1,9 +1,14 @@
 import "dotenv/config";
 import express from "express";
+import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent/run.ts";
 
 const app = express();
 app.use(express.json());
+
+app.get("/", (_req, res) => {
+  res.sendFile(fileURLToPath(new URL("../frontend/index.html", import.meta.url)));
+});
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, weather_provider: process.env.WEATHER_PROVIDER === "mock" ? "mock" : "openweather" });

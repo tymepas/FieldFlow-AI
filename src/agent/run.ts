@@ -1,5 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  AuthenticationError,
+} from "@anthropic-ai/sdk";
 import { TOOL_USE_INSTRUCTIONS } from "@swytchcode/runtime";
+import { redact } from "../swytch.ts";
 import { getWeatherProvider } from "../weather/index.ts";
 import type { WeatherProvider } from "../weather/provider.ts";
 import { newRunState, runTool, summarize, TOOLS, type RunState } from "./tools.ts";
@@ -109,6 +115,7 @@ export async function runAgent(request: string, opts: { weather?: WeatherProvide
     }
   } catch (e) {
     failed = true;
+    logAgentFailure(e);
     trace.add({ type: "agent", status: "failed", error: e instanceof Error ? e.message : String(e) });
   }
 
@@ -131,6 +138,46 @@ export async function runAgent(request: string, opts: { weather?: WeatherProvide
     weather_provider: weather.name,
     model: MODEL,
   };
+}
+
+/**
+ * Development-only metadata for failures before the agent can create a tool trace.
+ * It intentionally excludes request/response headers and applies the existing API-key
+ * redaction before writing text to the terminal.
+ */
+function logAgentFailure(error: unknown): void {
+  if (process.env.NODE_ENV === "production") return;
+
+  const err = error instanceof Error ? error : new Error(String(error));
+  const details: Record<string, string | number | null | undefined> = {
+    category: "unknown",
+    name: err.name,
+    class: err.constructor.name,
+    message: redact(err.message),
+  };
+
+  if (error instanceof APIConnectionTimeoutError) {
+    details.category = "timeout";
+  } else if (error instanceof APIConnectionError) {
+    details.category = "network";
+  } else if (error instanceof APIError) {
+    details.category = error instanceof AuthenticationError ? "authentication" : "api";
+    details.http_status = error.status;
+    details.anthropic_error_type = error.type;
+  }
+
+  const withMetadata = err as Error & { code?: unknown; cause?: unknown };
+  if (typeof withMetadata.code === "string" || typeof withMetadata.code === "number") {
+    details.code = withMetadata.code;
+  }
+  if (withMetadata.cause instanceof Error) {
+    details.cause_name = withMetadata.cause.name;
+    details.cause_message = redact(withMetadata.cause.message);
+    const cause = withMetadata.cause as Error & { code?: unknown };
+    if (typeof cause.code === "string" || typeof cause.code === "number") details.cause_code = cause.code;
+  }
+
+  console.error("[agent] request failure diagnostic", details);
 }
 
 function toolProvider(name: string): TraceStep["tool"] {

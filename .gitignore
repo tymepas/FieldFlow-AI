@@ -14,3 +14,6 @@ secrets*
 # Swytchcode local state (reproduce bundles with `swy bootstrap`)
 .swytchcode/workspace.json
 .swytchcode/integrations/
+
+# Local Claude app settings (machine-specific)
+.claude/
