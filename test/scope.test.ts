@@ -194,3 +194,37 @@ test("a request mentioning only a tracked location: no proxy activity, but not a
     /not referenced by the request/,
   );
 });
+
+// --- incomplete requests: ask for the missing detail, never guess ------------------------
+
+test("missing destination: not_tracked with the missing detail; weather, proxies and writes stay blocked", async () => {
+  const request = "What is the weather for tomorrow, I am planning to go there from Rohini Delhi for an event.";
+  const { state, ctx } = loaded(request);
+  const scope: any = await runTool("set_scope", {
+    mode: "not_tracked", requested_description: "weather at an unnamed destination", untracked_subjects: ["event", "Rohini (origin)"],
+    missing_information: "destination",
+    clarification: "You mentioned travelling from Rohini, Delhi tomorrow, but not where you're going. Tell me the destination and I'll check the forecast.",
+  }, ctx);
+  assert.equal(scope.mode, "not_tracked");
+  assert.equal(state.scope!.missing, "destination");
+  assert.match(state.scope!.clarification!, /Tell me the destination/);
+  assert.match(ctx.trace.steps[0].result!, /More information needed: the request has no destination/);
+
+  await assert.rejects(runTool("get_location_weather", { place: "Rohini", date: "2026-09-27" }, ctx), /only for adhoc requests/);
+  for (const id of ["FA-101", "FA-104"]) {
+    await assert.rejects(runTool("get_weather", { activity_id: id }, ctx), /not a tracked record/);
+    await assert.rejects(runTool("update_activity", { activity_id: id, explanation: "x" }, ctx), /not a tracked record/);
+  }
+  await assert.rejects(runTool("post_run_summary", { headline: "x" }, ctx), /not about a tracked record/);
+  assert.equal(state.adhoc.forecast, undefined);
+  assert.equal(state.weather.size, 0);
+});
+
+test("missing-information fields are only kept for not_tracked, and clarification only with a missing detail", async () => {
+  const a = loaded(DEMO);
+  await runTool("set_scope", { mode: "schedule_review", requested_description: "tomorrow", untracked_subjects: [], missing_information: "date", clarification: "x" }, a.ctx);
+  assert.equal(a.state.scope!.missing, undefined);
+  const b = loaded("hmm");
+  await runTool("set_scope", { mode: "not_tracked", requested_description: "unclear", untracked_subjects: [], clarification: "orphan" }, b.ctx);
+  assert.equal(b.state.scope!.clarification, undefined);
+});

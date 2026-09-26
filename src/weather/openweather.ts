@@ -1,6 +1,6 @@
 import { callTool } from "../swytch.ts";
 import type { NormalizedWeather } from "../types.ts";
-import type { AreaForecast, WeatherProvider } from "./provider.ts";
+import type { AreaForecast, CurrentWeather, WeatherProvider } from "./provider.ts";
 import { resolveLocation } from "./locations.ts";
 
 /**
@@ -61,6 +61,31 @@ export class OpenWeatherProvider implements WeatherProvider {
     const area = [res.city?.name, res.city?.country].filter(Boolean).join(", ") || "unnamed area";
     return summarizeForecast("openweather", place, latitude, longitude, area, res.list ?? [], offsetSec, date, time);
   }
+
+  /** Current conditions via SwytchCode `openweather.2.5.weather.list` (metric units, verified live). */
+  async getCurrentWeather(latitude: number, longitude: number): Promise<CurrentWeather> {
+    const res = await callTool("openweather.2.5.weather.list", { lat: latitude, lon: longitude, units: "metric", appid: this.apiKey });
+    return normalizeCurrent("openweather", latitude, longitude, res);
+  }
+}
+
+/** Map an OpenWeather 2.5 current-weather payload to CurrentWeather. */
+export function normalizeCurrent(source: CurrentWeather["source"], latitude: number, longitude: number, res: any): CurrentWeather {
+  if (typeof res?.main?.temp !== "number") throw new Error("OpenWeather returned no current temperature for these coordinates.");
+  return {
+    source,
+    latitude,
+    longitude,
+    provider_area: [res.name, res.sys?.country].filter(Boolean).join(", ") || "unnamed area",
+    observed_at: typeof res.dt === "number" ? toLocalIso(res.dt, res.timezone ?? 0) : new Date().toISOString(),
+    condition: res.weather?.[0]?.description ?? "unknown",
+    temperature_c: res.main.temp,
+    feels_like_c: typeof res.main.feels_like === "number" ? res.main.feels_like : null,
+    humidity_pct: typeof res.main.humidity === "number" ? res.main.humidity : null,
+    precipitation_mm_last_hour: (res.rain?.["1h"] ?? 0) + (res.snow?.["1h"] ?? 0),
+    wind_speed_m_per_s: res.wind?.speed ?? 0,
+    wind_gust_m_per_s: typeof res.wind?.gust === "number" ? res.wind.gust : null,
+  };
 }
 
 /**

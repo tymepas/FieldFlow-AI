@@ -211,6 +211,7 @@ textarea:focus{border-color:#4f8cff;box-shadow:0 0 0 3px #4f8cff14;outline:none}
         <button class="chip" type="button">Review tomorrow's field operations</button>
         <button class="chip" type="button">Check weather for Gurgaon Sector 59 tomorrow</button>
         <button class="chip" type="button">What needs attention tomorrow?</button>
+        <button class="chip" type="button">What's the weather where I am right now?</button>
         <button class="chip" type="button">Check outdoor activities and notify the team if weather is risky</button>
       </div>
       <div id="working" class="working" role="status"><div class="scan"></div><div><b>FIELDFLOW AGENT ACTIVE</b><span id="phaseText"> · Reading operational context</span></div><span id="elapsed" class="elapsed">00:00 elapsed</span></div>
@@ -226,6 +227,7 @@ textarea:focus{border-color:#4f8cff;box-shadow:0 0 0 3px #4f8cff14;outline:none}
     </section>
   </main>
 </div>
+<script type="module">import { requestBrowserLocation } from "/location.js"; window.FieldFlowLocation = { requestBrowserLocation };</script>
 <script>
 (()=>{
 const q=s=>document.querySelector(s),request=q("#request"),button=q("#runButton"),working=q("#working"),phaseText=q("#phaseText"),elapsed=q("#elapsed"),output=q("#output"),error=q("#error");
@@ -265,7 +267,7 @@ function runningRail(){ /* estimated progress while the single /run request is i
  setFlow({agent:"used"})}
 function finalRail(data,steps){ /* derived only from the recorded trace */
  const ok=s=>s.status==="completed",has=f=>steps.some(s=>ok(s)&&f(s)),failed=f=>steps.some(s=>s.status==="failed"&&f(s));
- const read=has(s=>s.action==="read_activities"),wx=has(s=>/forecast/.test(s.action||"")),dec=has(s=>s.type==="decision");
+ const read=has(s=>s.action==="read_activities"||s.action==="browser_location"),wx=has(s=>/forecast|current_weather/.test(s.action||"")),dec=has(s=>s.type==="decision");
  const nWrite=has(s=>s.tool==="notion"&&s.action!=="read_activities"),slack=has(s=>s.tool==="slack"),gmail=has(s=>s.tool==="gmail");
  const bad=data.status==="failed",notTracked=data.scope?.mode==="not_tracked";
  const st={observe:read?"done":bad?"failed":"",reason:wx?"done":notTracked?"skipped":bad&&read?"failed":"",decide:dec?"done":notTracked?"skipped":bad&&wx?"failed":"",act:""};
@@ -293,10 +295,12 @@ function actionsFrom(data){const steps=data.steps||[],done=s=>s.status==="comple
  const slack=slackTxt?["ok",data.adhoc?slackTxt:`Slack: ${slackTxt} posted`]:sFail?["fail","Slack message failed"]:["no","No Slack message"];
  return{notion,slack}}
 function li([cls,text]){return `<li class="${cls}"><i>${cls==="ok"?"✓":cls==="fail"?"✕":"○"}</i><span>${e(text)}</span></li>`}
-function gmailBlock(data){if(data.status==="failed"||!data.run_id)return"";return `<div class="gmail" id="gmail"><button type="button" id="gmailBtn">Send this result to my Gmail</button><p id="gmailMsg">Optional — nothing is emailed unless you click.</p></div>`}
+function gmailBlock(data){if(data.status==="failed"||!data.run_id||data.scope?.missing_information)return"";return `<div class="gmail" id="gmail"><button type="button" id="gmailBtn">Send this result to my Gmail</button><p id="gmailMsg">Optional — nothing is emailed unless you click.</p></div>`}
 function nextStep(data){const s=data.summary||{},a=data.adhoc,mode=data.scope?.mode,warn=data.status==="completed_with_errors"?" Check the failed steps in the execution trace.":"";
  if(data.status==="failed")return "Try the request again; if it keeps failing, check the FieldFlow server logs.";
  if(a)return (a.assessment_level==="significant"?"Consider rescheduling or moving your plan indoors, and re-check the forecast before you go.":a.assessment_level==="caution"?"Go ahead, but plan for the conditions (rain gear or shelter) and re-check the forecast on the day.":"No weather intervention is required. Continue with your plan.")+warn;
+ if(/current location/i.test(data.scope?.missing_information||""))return "No weather was checked and nothing was changed. Share your location with the button below, or type a place instead.";
+ if(data.scope?.missing_information)return `No weather was checked and nothing was changed. Add the ${data.scope.missing_information} to your request and run FieldFlow again.`;
  if(mode==="not_tracked"||!s.total)return "Ask about planned field operations or the weather for a specific place and date to get an operational result.";
  const r=s.reschedule||0,f=s.flag||0,pl=n=>n===1?"activity":"activities";
  if(r&&f)return `Move the ${r} rescheduled ${pl(r)} to a safer window and review the ${f} flagged ${pl(f)} with site leads before work starts.${warn}`;
@@ -306,7 +310,7 @@ function nextStep(data){const s=data.summary||{},a=data.adhoc,mode=data.scope?.m
 function hero(data){const s=data.summary||{},mode=data.scope?.mode,bad=data.status==="failed",warn=data.status==="completed_with_errors";
  const sim=data.weather_provider==="mock"||data.adhoc?.weather_source==="mock";
  const pills=`${bad?'<span class="pill failed">FAILED</span>':warn?'<span class="pill warn">COMPLETED WITH ERRORS</span>':""}${(data.adhoc||s.total)?`<span class="pill ${sim?"mock":"live"}">${sim?"SIMULATED WEATHER":"LIVE WEATHER"}</span>`:""}`;
- const acts=actionsFrom(data),actions=`<ul class="actions">${li(acts.notion)}${li(acts.slack)}<li class="no" id="gmailStatus"><i>○</i><span>Gmail available</span></li></ul>${gmailBlock(data)}`;
+ const acts=actionsFrom(data),gm=gmailBlock(data),actions=`<ul class="actions">${li(acts.notion)}${li(acts.slack)}${gm?'<li class="no" id="gmailStatus"><i>○</i><span>Gmail available</span></li>':""}</ul>${gm}`;
  let eyebrow,title,lead,body="";
  if(bad){eyebrow="Request could not be completed";title="FieldFlow could not finish this request";lead=(data.steps||[]).find(x=>x.error)?.error||data.error||"The agent stopped before producing a result."}
  else if(data.adhoc){const a=data.adhoc,gust=a.wind_gust_m_per_s_max==null?"":` · gusts ${a.wind_gust_m_per_s_max.toFixed(1)} m/s`;
@@ -315,6 +319,8 @@ function hero(data){const s=data.summary||{},mode=data.scope?.mode,bad=data.stat
   body=`<div><span class="level ${e(a.assessment_level)}">${a.assessment_level==="significant"?"SIGNIFICANT RISK":a.assessment_level==="caution"?"CAUTION":"LOW RISK"}</span>
    <div class="wx"><div><span>CONDITIONS</span><b>${e(a.condition)}</b></div><div><span>RAIN (MAX)</span><b>${a.precipitation_mm_per_hour_max.toFixed(1)} mm/h</b></div>
    <div><span>WIND (MAX)</span><b>${a.wind_speed_m_per_s_max.toFixed(1)} m/s${e(gust)}</b></div><div><span>TEMPERATURE</span><b>${a.temperature_c_min.toFixed(0)}–${a.temperature_c_max.toFixed(0)} °C</b></div></div></div>`}
+ else if(data.scope?.missing_information){const miss=data.scope.missing_information;eyebrow="More information needed";title=`I need the ${miss} to ${/weather|forecast|rain|wind|temperature/i.test(data.request||"")?"check the weather":"continue"}.`;lead=data.scope.clarification||`Tell me the ${miss} and run FieldFlow again.`;
+  if(/current location/i.test(miss))body=`<div class="gmail" id="geo"><button type="button" id="geoBtn">Share my current location</button><p id="geoMsg">Your browser will ask for permission. The location is used for this one lookup and is not stored.</p></div>`}
  else if(mode==="not_tracked"||(!s.total&&!data.adhoc)){eyebrow="Request not actioned";title="Nothing to act on for this request";lead=data.scope?.description?`FieldFlow did not find something it can act on for “${data.scope.description}”. No Notion, Slack or weather actions were taken.`:"No operational actions were taken."}
  else{const att=(s.flag||0)+(s.reschedule||0),items=(data.activities||[]).filter(a=>a.decision!=="PROCEED");
   eyebrow=`Operations review ${warn?"completed with errors":"complete"}`;title=att?`${att} ${att===1?"activity needs":"activities need"} attention`:`All ${s.total} activities can proceed`;
@@ -331,7 +337,32 @@ function render(data){current=data;const items=Array.isArray(data.activities)?da
  if(items.length)html+=`<div class="grid2"><section class="panel"><div class="section-head"><h2>Activity decision board</h2><span>${items.length} activities</span></div>${activities(items)}</section><aside class="panel"><div class="section-head"><h2>Why</h2><span>Weather → rule → action</span></div>${explanation(items)}</aside></div>`;
  html+=`<section class="panel summary"><p class="eyebrow">Agent summary</p><div class="agent-copy">${data.agent_summary?md(data.agent_summary):"<p>No final agent summary was returned.</p>"}</div><p class="tech">Claude: ${e(data.model||"not reported")} · Weather: ${e(data.adhoc?data.adhoc.weather_source:data.weather_provider||"not reported")} · Runtime: SwytchCode</p></section>`;
  html+=`<section class="panel trace"><div class="section-head"><h2>Execution trace</h2><span id="traceCount">Evidence · ${steps.length} recorded steps</span></div>${traceRows(steps)}</section>`;
- output.innerHTML=html;finalRail(data,steps);wireGmail()}
+ output.innerHTML=html;finalRail(data,steps);wireGmail();wireGeo()}
+
+/* ---------- current location (browser permission only; never stored) ---------- */
+function wireGeo(){const btn=q("#geoBtn");if(btn)btn.onclick=shareLocation}
+function setGeo(text,cls,btnText,disabled){const btn=q("#geoBtn"),msg=q("#geoMsg");if(!btn)return;btn.disabled=!!disabled;if(btnText)btn.textContent=btnText;msg.className=cls||"";msg.textContent=text}
+async function shareLocation(){
+ const api=window.FieldFlowLocation;if(!api){setGeo("Location access is unavailable on this page. Type a place instead.","fail","Try again");return}
+ setGeo("Waiting for your browser's location permission…","","Waiting for permission…",true);
+ const loc=await api.requestBrowserLocation();
+ if(!loc.ok){setGeo(loc.message,"fail","Try again");return}
+ setGeo("Location received. Checking current weather through SwytchCode…","","Checking weather…",true);
+ try{const r=await fetch("/current-weather",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({latitude:loc.latitude,longitude:loc.longitude,accuracy_m:loc.accuracy_m})}),d=await r.json().catch(()=>({}));
+  if(r.ok&&d.status==="completed")renderCurrent(d);else setGeo(d.error||"Current weather could not be retrieved. Try again, or type a place instead.","fail","Try again")}
+ catch{setGeo("Current weather could not be retrieved. Check your connection and try again.","fail","Try again")}}
+function renderCurrent(d){current=null;const w=d.weather,a=d.assessment,l=d.location,sim=w.source==="mock";
+ const gust=w.wind_gust_m_per_s==null?"":` · gusts ${w.wind_gust_m_per_s.toFixed(1)} m/s`;
+ const next=a.level==="significant"?"Conditions are rough right now — consider delaying outdoor plans.":a.level==="caution"?"Plan for the conditions (rain gear or shelter) if you are heading out.":"No weather intervention is required right now.";
+ const hero=`<section class="panel hero"><div class="hero-top"><p class="eyebrow">Current location weather</p><span class="pill live">LOCATION FROM BROWSER PERMISSION</span><span class="pill ${sim?"mock":"live"}">${sim?"SIMULATED WEATHER":"LIVE WEATHER"}</span></div>
+  <h2>Weather where you are now</h2><p class="lead">${e(a.summary)} Weather area reported: ${e(w.provider_area)}.</p><p class="next">${e(next)}</p>
+  <div class="hero-grid"><div><span class="level ${e(a.level)}">${a.level==="significant"?"SIGNIFICANT RISK":a.level==="caution"?"CAUTION":"LOW RISK"}</span>
+   <div class="wx"><div><span>COORDINATES</span><b>${l.latitude.toFixed(4)}, ${l.longitude.toFixed(4)}</b></div><div><span>ACCURACY</span><b>${l.accuracy_m==null?"not reported":`±${Math.round(l.accuracy_m)} m`}</b></div>
+   <div><span>CONDITIONS</span><b>${e(w.condition)}</b></div><div><span>TEMPERATURE</span><b>${w.temperature_c.toFixed(1)} °C${w.feels_like_c==null?"":` (feels ${w.feels_like_c.toFixed(1)})`}</b></div>
+   <div><span>RAIN (LAST HOUR)</span><b>${w.precipitation_mm_last_hour.toFixed(1)} mm</b></div><div><span>WIND</span><b>${w.wind_speed_m_per_s.toFixed(1)} m/s${e(gust)}</b></div></div></div>
+  <div><ul class="actions"><li class="ok"><i>✓</i><span>Location shared with your permission</span></li><li class="no"><i>○</i><span>Not stored — used for this lookup only</span></li><li class="no"><i>○</i><span>No Notion or Slack actions</span></li></ul></div></div></section>`;
+ output.innerHTML=hero+`<section class="panel trace"><div class="section-head"><h2>Execution trace</h2><span>Evidence · ${d.steps.length} recorded steps</span></div>${traceRows(d.steps)}</section>`;
+ finalRail({status:d.status,scope:null},d.steps)}
 
 /* ---------- optional Gmail delivery (user-controlled, after the result) ---------- */
 function wireGmail(){const btn=q("#gmailBtn");if(!btn)return;btn.onclick=sendGmail}

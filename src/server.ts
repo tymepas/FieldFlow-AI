@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent/run.ts";
+import { currentWeatherResult } from "./currentWeather.ts";
+import { getWeatherProvider } from "./weather/index.ts";
 import { emailStoredResult, ResultStore } from "./email.ts";
 import { getConnectedAddress, sendEmail } from "./integrations/gmail.ts";
 import { redact } from "./swytch.ts";
@@ -14,6 +16,11 @@ const results = new ResultStore();
 
 app.get("/", (_req, res) => {
   res.sendFile(fileURLToPath(new URL("../frontend/index.html", import.meta.url)));
+});
+
+/** Browser-location helper module used by the UI (navigator.geolocation only). */
+app.get("/location.js", (_req, res) => {
+  res.type("application/javascript").sendFile(fileURLToPath(new URL("../frontend/location.js", import.meta.url)));
 });
 
 app.get("/health", (_req, res) => {
@@ -35,6 +42,15 @@ app.post("/run", async (req, res) => {
   }
 });
 
+/**
+ * Current weather at coordinates the browser shared after the user granted location permission.
+ * Goes straight to the SwytchCode OpenWeather method (no agent run); coordinates are not stored.
+ */
+app.post("/current-weather", async (req, res) => {
+  const { http, body } = await currentWeatherResult(req.body, getWeatherProvider());
+  res.status(http).json(body);
+});
+
 /** Email a completed run's result to the connected Gmail account (via SwytchCode). Never re-runs the agent. */
 app.post("/email-result", async (req, res) => {
   const runId = req.body?.run_id;
@@ -48,5 +64,5 @@ app.post("/email-result", async (req, res) => {
 
 const port = Number(process.env.PORT ?? 3000);
 app.listen(port, () => {
-  console.log(`FieldFlow AI listening on http://localhost:${port} (POST /run, POST /email-result)`);
+  console.log(`FieldFlow AI listening on http://localhost:${port} (POST /run, POST /current-weather, POST /email-result)`);
 });

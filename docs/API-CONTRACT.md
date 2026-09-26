@@ -58,7 +58,7 @@ The original contract fields (`request`, `status`, `summary{total,proceed,flag,r
 | `weather_provider` | `openweather` or `mock` |
 | `model` | Claude model used |
 | `run_id` | Id of this completed run, used by `POST /email-result` |
-| `scope` | `{ mode, description }` the agent declared, or `null` |
+| `scope` | `{ mode, description }` the agent declared, or `null`. For a valid but incomplete request (`not_tracked`), it also carries `missing_information` (e.g. `"destination"`, `"current location"`) and `clarification` (the message asking for it). The UI shows a location-sharing button when `missing_information` is `"current location"`. |
 | `adhoc` | For ad-hoc requests (the user's own event/place, not a tracked activity): place, date, provider area, coordinates and `location_resolution` (FieldFlow place directory, or "estimated by the agent"), worst-case weather, assessment level (`low` / `caution` / `significant`, same thresholds), and whether a Notion review page / Slack update was made. `null` otherwise |
 
 Steps are recorded by the tool handlers in code, not reported by the model, so the trace reflects what
@@ -86,5 +86,59 @@ Request: `{ "run_id": "<run_id from /run>" }`
 | `404` / `400` | Unknown or expired run, failed run, or bad body |
 
 Results are held in server memory (last 50 runs).
+
+## `POST /current-weather`
+
+Current weather for coordinates the **browser** shared after the user granted its location-permission prompt (`navigator.geolocation.getCurrentPosition`). The agent is not run and the coordinates are not stored. Weather comes from SwytchCode `openweather.2.5.weather.list` (metric units).
+
+Request:
+
+```json
+{ "latitude": 28.7063083, "longitude": 77.1087892, "accuracy_m": 42 }
+```
+
+| Field | Rules |
+|---|---|
+| `latitude` | Required, number, −90..90 |
+| `longitude` | Required, number, −180..180 |
+| `accuracy_m` | Optional: the browser's accuracy radius in metres. A missing, negative or non-numeric value becomes `null`. The field name is `accuracy_m`; a field named `accuracy` is ignored. |
+
+**200** (`status: "completed"`). The field names are exact; the values are illustrative.
+
+```json
+{
+  "status": "completed",
+  "location": { "latitude": 28.7063083, "longitude": 77.1087892, "accuracy_m": 42, "source": "browser geolocation (user permission)" },
+  "weather": {
+    "source": "openweather", "latitude": 28.7063083, "longitude": 77.1087892,
+    "provider_area": "Pitampura, IN", "observed_at": "2026-09-26T14:08:18+05:30",
+    "condition": "broken clouds", "temperature_c": 23.4, "feels_like_c": 23.5, "humidity_pct": 64,
+    "precipitation_mm_last_hour": 0, "wind_speed_m_per_s": 5.9, "wind_gust_m_per_s": 9.3
+  },
+  "assessment": { "level": "low", "triggered": [], "summary": "No significant weather risk (…)." },
+  "steps": [
+    { "id": "step-1", "type": "tool", "action": "browser_location", "status": "completed", "result": "Location shared by the browser after user permission: …" },
+    { "id": "step-2", "type": "tool", "tool": "openweather", "action": "current_weather", "status": "completed", "result": "Current weather [Pitampura, IN]: …" },
+    { "id": "step-3", "type": "decision", "tool": "decision_engine", "status": "completed", "reason": "Current-conditions assessment (low): …" }
+  ]
+}
+```
+
+- `provider_area` is the area name OpenWeather reports for the coordinates.
+- `precipitation_mm_last_hour` is rain plus snow over the last hour, or 0 when none is reported.
+- `feels_like_c`, `humidity_pct` and `wind_gust_m_per_s` may be `null`.
+- `assessment.level` is `low`, `caution` or `significant`, from the same fixed thresholds as everything else.
+- With `WEATHER_PROVIDER=mock`, `weather.source` is `"mock"` and the weather step is `tool: "mock_weather"`, `action: "current_weather_simulated"`.
+
+**400** (`status: "bad_request"`), returned before any weather call:
+
+| Case | `error` |
+|---|---|
+| `latitude` or `longitude` missing or `null` | `latitude and longitude are required (from the browser's location permission).` |
+| Not numeric, or out of range | `latitude/longitude are out of range.` |
+
+**502** (`status: "failed"`): the weather lookup failed. The response has `location` (as above), `weather: null`, `assessment: null`, `steps` whose last entry is the `current_weather` step with `status: "failed"` and an `error`, and `error: "Current weather could not be retrieved."`
+
+Permission denied, unavailable, timeout or an unsupported browser are handled in the browser (`frontend/location.js`) and never reach this endpoint.
 
 `GET /health` returns `{ "ok": true, "weather_provider": "openweather" | "mock" }`.

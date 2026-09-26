@@ -27,6 +27,10 @@ export interface RunScope {
   mode: ScopeMode;
   activityIds: Set<string>;
   description: string;
+  /** not_tracked only: a required detail the request lacks (e.g. "destination"). */
+  missing?: string;
+  /** not_tracked only: what to tell the user so they can supply it. */
+  clarification?: string;
 }
 
 const stem = (w: string) => (w.length >= 5 ? w.slice(0, 5) : w);
@@ -95,15 +99,34 @@ export function requestReferencesActivity(request: string, activity: Activity): 
 export function resolveScope(
   request: string,
   loaded: Activity[],
-  input: { mode: ScopeMode; activity_ids?: string[]; date?: string; requested_description: string; untracked_subjects?: string[] },
+  input: {
+    mode: ScopeMode;
+    activity_ids?: string[];
+    date?: string;
+    requested_description: string;
+    untracked_subjects?: string[];
+    missing_information?: string;
+    clarification?: string;
+  },
 ): RunScope {
   const description = input.requested_description.trim();
   switch (input.mode) {
     case "adhoc":
       return { mode: "adhoc", activityIds: new Set(), description };
 
-    case "not_tracked":
-      return { mode: "not_tracked", activityIds: new Set(), description };
+    case "not_tracked": {
+      // A valid request that lacks a required detail (e.g. the destination) is reported as such,
+      // so the user is asked for it instead of FieldFlow guessing.
+      const missing = input.missing_information?.trim();
+      const clarification = input.clarification?.trim();
+      return {
+        mode: "not_tracked",
+        activityIds: new Set(),
+        description,
+        ...(missing ? { missing } : {}),
+        ...(missing && clarification ? { clarification } : {}),
+      };
+    }
 
     case "schedule_review": {
       // The model must list anything specific the user asked about that is not tracked;

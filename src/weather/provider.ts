@@ -17,6 +17,25 @@ export interface AreaForecast {
   temperature_c_min: number;
 }
 
+/** Current conditions at arbitrary coordinates (e.g. the user's browser location). */
+export interface CurrentWeather {
+  source: NormalizedWeather["source"];
+  latitude: number;
+  longitude: number;
+  /** Area name the weather provider reports for these coordinates. */
+  provider_area: string;
+  /** Local ISO time of the observation. */
+  observed_at: string;
+  condition: string;
+  temperature_c: number;
+  feels_like_c: number | null;
+  humidity_pct: number | null;
+  /** Rain + snow over the last hour (mm); 0 when the provider reports none. */
+  precipitation_mm_last_hour: number;
+  wind_speed_m_per_s: number;
+  wind_gust_m_per_s: number | null;
+}
+
 /**
  * Weather source seam. The decision engine only ever sees NormalizedWeather,
  * so a provider can be swapped (mock ↔ OpenWeather) without touching the rules.
@@ -27,4 +46,6 @@ export interface WeatherProvider {
   getWeather(location: string, date: string, time: string): Promise<NormalizedWeather>;
   /** Forecast for arbitrary coordinates on a local date, optionally at a local time. */
   getAreaForecast(place: string, latitude: number, longitude: number, date: string, time?: string): Promise<AreaForecast>;
+  /** Current conditions at coordinates. */
+  getCurrentWeather(latitude: number, longitude: number): Promise<CurrentWeather>;
 }

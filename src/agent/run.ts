@@ -26,6 +26,8 @@ Scope — the tracked operational scope is exactly the records in the Notion Fie
 - specific_activities: only for tracked records the user explicitly named (by activity id or activity name).
 - adhoc: when the user asks about their own event, visit or place that is not a tracked record (e.g. "I have a hackathon tomorrow in Gurgaon Sector 59, check the weather", "check the weather for Gurgaon tomorrow"). Never substitute a similar or "closest" tracked record (for example one in the same city) and never broaden the request into a full schedule review.
 - not_tracked: when the request cannot be served at all (not a weather/operations question). Take no action and explain why.
+- Current location: if the user asks about where they are right now ("weather where I am", "my current location") and names no place, do not guess or infer it (not from IP, earlier messages or tracked records). Call set_scope with mode not_tracked, missing_information exactly "current location", and a clarification saying they can share their location with the browser's permission prompt or type a place. The UI then offers a location-sharing button.
+- Incomplete request: if a weather request lacks a required detail — e.g. only an origin is given ("going there from Rohini") with no destination, or no date — do not guess it and do not substitute a tracked record. Call set_scope with mode not_tracked, missing_information (e.g. "destination") and a clarification that asks for it. The origin is context only.
 - There is no traffic or route integration. Where someone is coming from (e.g. "coming from Rohini") is context only: check the destination's weather and never claim to have analysed traffic, route or commute.
 
 Workflow for an adhoc request:
@@ -70,7 +72,7 @@ export interface RunResponse {
   /** Identifies this completed run for follow-up actions such as POST /email-result. */
   run_id: string;
   /** The scope the agent declared (null if it never got that far). */
-  scope: { mode: string; description: string } | null;
+  scope: { mode: string; description: string; missing_information?: string; clarification?: string } | null;
   /** Ad-hoc review result, present only for adhoc requests that fetched weather. */
   adhoc: {
     place: string;
@@ -181,7 +183,14 @@ export async function runAgent(request: string, opts: { weather?: WeatherProvide
     weather_provider: weather.name,
     model: MODEL,
     run_id: randomUUID(),
-    scope: state.scope ? { mode: state.scope.mode, description: state.scope.description } : null,
+    scope: state.scope
+      ? {
+          mode: state.scope.mode,
+          description: state.scope.description,
+          ...(state.scope.missing ? { missing_information: state.scope.missing } : {}),
+          ...(state.scope.clarification ? { clarification: state.scope.clarification } : {}),
+        }
+      : null,
     adhoc: adhocResult(state),
   };
 }

@@ -72,6 +72,14 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
           items: { type: "string" },
           description: "Every specific event, activity, place or route the user mentioned that is NOT a tracked record (e.g. a personal event, a venue, a commute). Empty if none. A non-empty list rules out schedule_review.",
         },
+        missing_information: {
+          type: "string",
+          description: "not_tracked only, when the request is valid but lacks a required detail: a short noun for what is missing, e.g. 'destination' or 'date'. Never guess the missing detail.",
+        },
+        clarification: {
+          type: "string",
+          description: "not_tracked only, with missing_information: one or two sentences to the user restating what they did say and asking for the missing detail, with an example (e.g. 'Tell me the destination — for example, Gurgaon Sector 59 — and I'll check the forecast').",
+        },
       },
       required: ["mode", "requested_description", "untracked_subjects"],
       additionalProperties: false,
@@ -240,7 +248,9 @@ export async function runTool(
       trace.add({
         type: "agent", action: "set_scope", status: "completed",
         result: scope.mode === "not_tracked"
-          ? `Not tracked: "${scope.description}" is outside what FieldFlow can act on; no operational actions were taken.`
+          ? scope.missing
+            ? `More information needed: the request has no ${scope.missing}, so nothing was checked or changed.`
+            : `Not tracked: "${scope.description}" is outside what FieldFlow can act on; no operational actions were taken.`
           : `${scope.mode}: ${ids.length} activit${ids.length === 1 ? "y" : "ies"} in scope (${ids.join(", ") || "none"})`,
       });
       return { mode: scope.mode, activity_ids: ids };

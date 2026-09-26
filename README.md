@@ -48,7 +48,22 @@ An ad-hoc request does **not** need to exist as a Notion Field Activities record
 
 An ad-hoc request is **never** mapped to an unrelated tracked activity. Your Gurgaon hackathon is not treated as FA-101 just because FA-101 is also in Gurgaon.
 
-After any completed result you can click **Send this result to my Gmail** to email it to your connected account. This only happens when you click; nothing is emailed automatically.
+### C. Current-location weather
+
+> "Can you share the location and weather where I am right now?"
+
+FieldFlow never guesses or infers where you are: not from your IP, account data, earlier messages or tracked records. The agent answers that it needs your current location, and the result offers a **Share my current location** button. This flow is separate from the planned-operations and ad-hoc workflows, and it takes no Notion or Slack actions.
+
+1. Clicking the button calls the browser Geolocation API (`navigator.geolocation.getCurrentPosition`), so **your browser shows its own permission prompt**. Nothing continues unless you allow it.
+2. The browser's latitude, longitude and accuracy are sent to FieldFlow's backend (`POST /current-weather`) for **this one lookup only**.
+3. The backend gets current conditions through **SwytchCode's OpenWeather integration** (`openweather.2.5.weather.list`) and grades them with the same fixed thresholds.
+4. The result shows your coordinates, the accuracy radius, conditions, temperature, rain in the last hour, wind, the **area name OpenWeather reports** for those coordinates, and a risk level. A badge says the location came from browser permission.
+
+If you **deny** permission, FieldFlow says so and asks you to allow location access for the site or type a place instead (for example, "weather in Gurgaon Sector 59 tomorrow"). Nothing is sent to the backend. "Location unavailable", "timed out" and "browser not supported" are each reported separately. See [Security and privacy](#security-and-privacy) for exactly what is and isn't stored.
+
+---
+
+After any completed planned-operations or ad-hoc result you can click **Send this result to my Gmail** to email it to your connected account. This only happens when you click; nothing is emailed automatically.
 
 ---
 
@@ -85,7 +100,10 @@ flowchart TD
     H2 --> H3[Ad-hoc assessment<br/>low / caution / significant]
     H3 -->|if requested| H4[Notion: create ad-hoc review page]
     H3 -->|if requested| H5[Slack: ad-hoc update]
-    S -->|not_tracked| N[Explain, take no action]
+    S -->|not_tracked| N[Explain, take no action<br/>or ask for the missing detail]
+    N -->|current location needed,<br/>user allows browser permission| B[Browser Geolocation API]
+    B --> C1[OpenWeather current weather<br/>POST /current-weather]
+    C1 --> C2[Current-conditions assessment]
     R[Completed result] -->|user clicks| G[Gmail: email result]
 
     subgraph SwytchCode[All external calls run through SwytchCode]
@@ -97,6 +115,7 @@ flowchart TD
       H2
       H4
       H5
+      C1
       G
     end
 ```
@@ -110,7 +129,7 @@ flowchart TD
 | Integration | What FieldFlow uses it for | SwytchCode methods |
 |---|---|---|
 | **Notion** | Read planned Field Activities; update tracked records when required; create ad-hoc operational review pages on request; seeding | `notion.children.get`, `notion.databas.get`, `notion.data_source.get`, `notion.query.create`, `notion.page.update`, `notion.page.create` |
-| **OpenWeather** | Live 5-day / 3-hour forecast for tracked locations and resolved ad-hoc places | `openweather.2.5.forecast.list` |
+| **OpenWeather** | Live 5-day / 3-hour forecast for tracked locations and resolved ad-hoc places; current conditions for a browser-shared location | `openweather.2.5.forecast.list`, `openweather.2.5.weather.list` |
 | **Slack** | Per-activity FLAG/RESCHEDULE alerts, the run summary, and ad-hoc updates on request | `slack.conversations.list.list`, `slack.chat.postmessage.create` |
 | **Gmail** | Email a completed result to the connected account, only when you click the button | `gmail.user.profile.get`, `gmail.user.send.create1` |
 
@@ -122,6 +141,7 @@ Each step's output drives the next one:
 
 - **Tracked:** request → `Notion.read` (activities, locations, times) → `OpenWeather.forecast` (for each activity's own location and start time) → **decision engine** → `Notion.update` (only FLAG/RESCHEDULE) → `Slack.post` (alerts for those activities, then the run summary).
 - **Ad-hoc:** request → **place resolution** → `OpenWeather.forecast` (at the resolved coordinates) → **weather assessment** → `Notion.create` review page (if requested, containing the assessment) → `Slack.post` (if requested, containing the assessment).
+- **Current location:** request → agent reports that the current location is missing → user allows **browser geolocation** → `OpenWeather.current` (at those coordinates) → **current-conditions assessment**.
 
 ---
 
@@ -173,6 +193,7 @@ These rules are enforced in code, not only in the prompt:
 - The UI only shows an action as done if its trace step succeeded, and tool failures are reported as failures.
 - Simulated weather (`WEATHER_PROVIDER=mock`) is labelled as simulated everywhere.
 - No traffic, route or commute analysis is claimed.
+- The user's current location is never inferred. It is only used after the browser's permission prompt is granted, and is not stored by FieldFlow.
 - API keys are masked in error messages, and secrets stay in `.env`, which is gitignored.
 
 ---
@@ -265,6 +286,7 @@ Useful scripts: `scripts/seed-notion.ts [--reset]` (restore the demo rows), `scr
 |---|---|
 | `POST /run` `{ "request": "…" }` | Runs the agent and returns `request`, `status`, `summary`, `steps`, `activities`, `agent_summary`, `weather_provider`, `model`, `run_id`, `scope` and `adhoc` |
 | `POST /email-result` `{ "run_id": "…" }` | Emails that completed result to the connected Gmail account, once; the agent is not re-run |
+| `POST /current-weather` `{ "latitude", "longitude", "accuracy_m" }` | Current weather for coordinates the browser shared after permission; no agent run, nothing stored |
 | `GET /health` | Liveness check |
 | `GET /` | The FieldFlow UI |
 
@@ -275,7 +297,7 @@ Full contract: [docs/API-CONTRACT.md](docs/API-CONTRACT.md).
 ## Testing
 
 ```bash
-npm test             # 49 tests
+npm test             # 58 tests
 npm run typecheck
 ```
 
@@ -287,6 +309,8 @@ The tests cover:
 - **Ad-hoc workflow:** assessment levels, forecast summarising, and Notion/Slack only when requested.
 - **Place resolution:** directory matches, the ambiguous "Sector 59", and the labelled fallback.
 - **Gmail:** email content, the MIME encoding, and send-once / retry-after-failure / in-flight protection.
+- **Incomplete requests:** a missing destination or current location is reported as missing, and weather, proxies and writes stay blocked.
+- **Current location:** permission granted, permission denied, unavailable / timeout / unsupported, the weather lookup with coordinates, missing or invalid coordinates (rejected before any weather call), weather failure, and response mapping. Browser geolocation is tested with a fake, so no real location is used.
 
 None of the tests call Notion, Slack or Gmail.
 
@@ -299,12 +323,15 @@ None of the tests call Notion, Slack or Gmail.
 3. Ask: *"Check the weather for my hackathon tomorrow in Gurgaon Sector 59. Please record the operational review in Notion and update the team on Slack."* Show the live ad-hoc result, the new Notion review page and the Slack update.
 4. Point out that FA-101 (also in Gurgaon) was **not** used as a proxy, and that the Field Activities rows did not change.
 5. Optionally, click **Send this result to my Gmail**.
+6. Optionally, ask *"Can you share the location and weather where I am right now?"*, click **Share my current location** and allow the browser prompt. Show the current conditions, the OpenWeather area and the accuracy.
 
 ---
 
-## Security and limitations
+## Security and privacy
 
 - Never commit `.env` or API keys.
+- **Current location:** coordinates are requested only through the browser's permission prompt and sent only for the one `/current-weather` lookup. FieldFlow does not keep them: nothing in localStorage, sessionStorage or IndexedDB, no server-side storage, and they're not written to FieldFlow's own server logs.
+- **SwytchCode audit log:** every call runs through the SwytchCode CLI, which keeps a local execution audit on the server machine (`~/.swytchcode/audit/*.jsonl`). It records outbound request URLs, so it contains the coordinates of each current-location lookup, as well as the OpenWeather key in the `appid` parameter. Treat that directory as sensitive; `swy audit clear` deletes it.
 - This is a hackathon demo, not a production service. `/run` and `/email-result` have no authentication or rate limiting, so add both before exposing the server publicly.
 - Completed results are kept in memory (the last 50 runs) for the Gmail action, so they are lost on restart.
 - The CLI stores SwytchCode provider credentials on the machine where you connected them. A hosted deployment needs those credentials available on the server.

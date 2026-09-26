@@ -1,5 +1,5 @@
 import type { NormalizedWeather } from "../types.ts";
-import type { AreaForecast, WeatherProvider } from "./provider.ts";
+import type { AreaForecast, CurrentWeather, WeatherProvider } from "./provider.ts";
 import { resolveLocation } from "./locations.ts";
 
 type Scenario = Omit<NormalizedWeather, "source" | "location" | "forecast_time">;
@@ -56,6 +56,25 @@ export class MockWeatherProvider implements WeatherProvider {
         temperature_c: 29.5,
       },
       temperature_c_min: 24.0,
+    };
+  }
+
+  /** TEST DATA for current conditions at any coordinates, always labelled mock. */
+  async getCurrentWeather(latitude: number, longitude: number): Promise<CurrentWeather> {
+    console.warn("[MOCK WEATHER] current conditions: using test data, not a real observation");
+    return {
+      source: "mock",
+      latitude,
+      longitude,
+      provider_area: "simulated area",
+      observed_at: new Date().toISOString(),
+      condition: "light rain",
+      temperature_c: 27.1,
+      feels_like_c: 29.0,
+      humidity_pct: 78,
+      precipitation_mm_last_hour: 1.2,
+      wind_speed_m_per_s: 4.4,
+      wind_gust_m_per_s: 7.9,
     };
   }
 }
