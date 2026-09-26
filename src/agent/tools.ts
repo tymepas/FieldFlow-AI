@@ -5,6 +5,7 @@ import { postMessage } from "../integrations/slack.ts";
 import type { WeatherProvider } from "../weather/provider.ts";
 import type { Activity, DecisionResult, NormalizedWeather } from "../types.ts";
 import type { Trace } from "./trace.ts";
+import { resolveScope, type RunScope } from "./scope.ts";
 
 /** Everything the run has learned so far. Tools read from here so the model cannot
  *  supply locations, times, weather or decisions itself — only activity ids. */
@@ -15,10 +16,14 @@ export interface RunState {
   updated: Set<string>;
   notified: Set<string>;
   summaryPosted: boolean;
+  /** Set by read_activities; set_scope requires it. */
+  activitiesRead: boolean;
+  /** Records this run may act on, declared via set_scope and validated in code. */
+  scope?: RunScope;
 }
 
 export function newRunState(): RunState {
-  return { activities: new Map(), weather: new Map(), decisions: new Map(), updated: new Set(), notified: new Set(), summaryPosted: false };
+  return { activities: new Map(), weather: new Map(), decisions: new Map(), updated: new Set(), notified: new Set(), summaryPosted: false, activitiesRead: false };
 }
 
 const activityIdInput = {
@@ -32,10 +37,32 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "read_activities",
     description:
-      "Read planned field activities from the Notion 'Field Activities' database. Optionally filter to one date (YYYY-MM-DD). Must be called before any other tool.",
+      "Read planned field activities from the Notion 'Field Activities' database. Optionally filter to one date (YYYY-MM-DD). Must be called first, then set_scope.",
     input_schema: {
       type: "object",
       properties: { date: { type: "string", description: "Only return activities on this ISO date (YYYY-MM-DD). Omit for all." } },
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "set_scope",
+    description:
+      "Declare which tracked Notion records this request is about. Call once, after read_activities and before any other tool. schedule_review: the user asked to review the scheduled operations in general (optionally one date). specific_activities: the user explicitly named tracked records (by id or activity name). not_tracked: the user asked about an event, activity or location that is not a tracked record; no weather, decision, Notion or Slack actions are then allowed. Never pick a similar or closest record as a proxy.",
+    input_schema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["schedule_review", "specific_activities", "not_tracked"] },
+        activity_ids: { type: "array", items: { type: "string" }, description: "For specific_activities: the ids the user referred to." },
+        date: { type: "string", description: "For schedule_review: limit the review to this ISO date (YYYY-MM-DD)." },
+        requested_description: { type: "string", description: "Short description of what the user asked about, in their terms." },
+        untracked_subjects: {
+          type: "array",
+          items: { type: "string" },
+          description: "Every specific event, activity, place or route the user mentioned that is NOT a tracked record (e.g. a personal event, a venue, a commute). Empty if none. A non-empty list rules out schedule_review.",
+        },
+      },
+      required: ["mode", "requested_description", "untracked_subjects"],
       additionalProperties: false,
     },
     strict: true,
@@ -86,7 +113,7 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "post_run_summary",
-    description: "Post one Slack summary to #field-ops of the whole review (counts and each activity's decision). Call once, after every activity has been evaluated and actioned.",
+    description: "Post one Slack summary to #field-ops of the whole review (counts and each activity's decision). Call once, after every in-scope activity has been evaluated and actioned. Not allowed when the scope is not_tracked.",
     input_schema: {
       type: "object",
       properties: { headline: { type: "string", description: "One-sentence overview of the review outcome." } },
@@ -100,6 +127,12 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
 function requireActivity(state: RunState, id: string): Activity {
   const a = state.activities.get(id);
   if (!a) throw new Error(`Unknown activity_id "${id}". Call read_activities first and use an id it returned.`);
+  const scope = state.scope;
+  if (!scope) throw new Error("Call set_scope before acting on any activity.");
+  if (scope.mode === "not_tracked") {
+    throw new Error(`The requested item ("${scope.description}") is not a tracked record, so no weather, decision, Notion or Slack action is allowed on ${id}.`);
+  }
+  if (!scope.activityIds.has(id)) throw new Error(`${id} is outside the declared scope (${scope.mode}); do not act on it.`);
   return a;
 }
 
@@ -114,7 +147,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export async function runTool(
   name: string,
   input: any,
-  ctx: { state: RunState; trace: Trace; weather: WeatherProvider },
+  ctx: { state: RunState; trace: Trace; weather: WeatherProvider; request: string },
 ): Promise<unknown> {
   const { state, trace, weather } = ctx;
 
@@ -123,11 +156,27 @@ export async function runTool(
       const all = await readActivities();
       const rows = input.date ? all.filter((a) => a.date === input.date) : all;
       for (const a of rows) state.activities.set(a.activity_id, a);
+      state.activitiesRead = true;
       trace.add({
         type: "tool", tool: "notion", action: "read_activities", status: "completed",
         result: `${rows.length} activities loaded${input.date ? ` for ${input.date}` : ""} (${all.length} in database)`,
       });
       return rows.map(({ page_id, ...a }) => a);
+    }
+
+    case "set_scope": {
+      if (!state.activitiesRead) throw new Error("Call read_activities before set_scope.");
+      if (state.scope) throw new Error(`Scope already set to ${state.scope.mode}; it cannot be changed within a run.`);
+      const scope = resolveScope(ctx.request, [...state.activities.values()], input);
+      state.scope = scope;
+      const ids = [...scope.activityIds];
+      trace.add({
+        type: "agent", action: "set_scope", status: "completed",
+        result: scope.mode === "not_tracked"
+          ? `Not tracked: "${scope.description}" is not in the Notion field activities; no operational actions will be taken.`
+          : `${scope.mode}: ${ids.length} activit${ids.length === 1 ? "y" : "ies"} in scope (${ids.join(", ") || "none"})`,
+      });
+      return { mode: scope.mode, activity_ids: ids };
     }
 
     case "get_weather": {
@@ -199,7 +248,9 @@ export async function runTool(
 
     case "post_run_summary": {
       if (state.summaryPosted) throw new Error("Summary already posted in this run.");
-      const pending = [...state.activities.keys()].filter((id) => !state.decisions.has(id));
+      if (!state.scope) throw new Error("Call set_scope first.");
+      if (state.scope.mode === "not_tracked") throw new Error("No summary is posted when the request is not about a tracked record.");
+      const pending = [...state.scope.activityIds].filter((id) => !state.decisions.has(id));
       if (pending.length) throw new Error(`Not every activity is evaluated yet: ${pending.join(", ")}`);
       const counts = summarize(state);
       const simulated = [...state.weather.values()].some((w) => w.source === "mock");

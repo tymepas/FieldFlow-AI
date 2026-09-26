@@ -18,13 +18,21 @@ const TIMEZONE = "Asia/Kolkata";
 const SYSTEM = `You are FieldFlow AI, an operations continuity agent for a field-operations coordinator.
 You reconcile planned field activities against real-world weather and coordinate the response.
 
-Workflow for a review request:
-1. Work out which date(s) the request covers, then call read_activities (with a date filter when the request names one).
-2. For each relevant activity: get_weather, then evaluate_risk.
+Scope — the tracked operational scope is exactly the records in the Notion Field Activities database:
+- After read_activities, call set_scope once, before any other tool.
+- schedule_review: when the user asks about the scheduled operations in general — e.g. what is affected, whether anything needs to change, or to review a day — without introducing an event, place or route of their own.
+- In set_scope, list in untracked_subjects every specific event, activity, place or route the user mentioned that is not a tracked record.
+- specific_activities: only for tracked records the user explicitly named (by activity id or activity name).
+- not_tracked: when the user asks about an event, activity or location that is not a tracked record. Never substitute a similar or "closest" record (for example one in the same city) as a proxy, and never broaden the request into a full schedule review. Take no weather, decision, Notion or Slack action; explain that the item is not tracked in the Notion field activities.
+- Weather is only available for the locations and start times of tracked records. You cannot check arbitrary places, routes or commutes; say so plainly instead of implying you did.
+
+Workflow for an in-scope request:
+1. Work out which date(s) the request covers, then call read_activities (with a date filter when the request names one), then set_scope.
+2. For each in-scope activity: get_weather, then evaluate_risk.
 3. evaluate_risk is a deterministic rules engine with fixed thresholds. Its decision is final: never override, soften or second-guess it, and never invent thresholds.
 4. For every FLAG or RESCHEDULE: call update_activity (explain the operational impact in plain language), then notify_team with a concrete required action. If the activity names an external stakeholder, the required action must say who contacts them and about what; stakeholder email is not automated yet.
 5. PROCEED activities need no update or alert.
-6. After all activities are handled, call post_run_summary once.
+6. After all in-scope activities are handled, call post_run_summary once (not for not_tracked).
 7. Finish with a short plain-text summary for the coordinator.
 
 Weather marked source "mock" is a simulated demo scenario; say so whenever you describe it.
@@ -99,7 +107,7 @@ export async function runAgent(request: string, opts: { weather?: WeatherProvide
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
         try {
-          const out = await runTool(block.name, block.input, { state, trace, weather });
+          const out = await runTool(block.name, block.input, { state, trace, weather, request });
           results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(out) });
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
@@ -183,6 +191,7 @@ function logAgentFailure(error: unknown): void {
 function toolProvider(name: string): TraceStep["tool"] {
   if (name === "read_activities" || name === "update_activity") return "notion";
   if (name === "get_weather") return "openweather";
+  if (name === "set_scope") return undefined;
   if (name === "notify_team" || name === "post_run_summary") return "slack";
   return "decision_engine";
 }

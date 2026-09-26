@@ -50,7 +50,7 @@ The original contract fields (`request`, `status`, `summary{total,proceed,flag,r
 | `status` values | `completed`; `completed_with_errors` (a tool call failed but the run finished); `failed` (the agent loop itself failed) |
 | `steps[].type` | `tool`, `decision`, plus `agent` (the model's own text between tool calls, in `result`) |
 | `steps[].tool` | `notion`, `openweather`, `mock_weather` (simulated weather, action `forecast_simulated`), `slack`, `decision_engine` |
-| `steps[].action` | `read_activities`, `forecast`, `forecast_simulated`, `update_activity`, `send_message`, `send_summary` |
+| `steps[].action` | `read_activities`, `forecast`, `forecast_simulated`, `update_activity`, `send_message`, `send_summary`; on `agent` steps, `set_scope` (the declared scope: `schedule_review`, `specific_activities` or `not_tracked`) |
 | `steps[].activity_id` | Activity a step belongs to |
 | `steps[].error` | Error message on a `failed` step (API keys are redacted) |
 | `activities[]` | Per-activity decision, reason, weather source and which actions ran |

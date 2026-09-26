@@ -16,7 +16,11 @@ function setup() {
   const state = newRunState();
   state.activities.set("IN-1", activity("IN-1", "Gurgaon", "indoor")); // mock: heavy rain
   state.activities.set("OUT-1", activity("OUT-1", "Gurgaon", "outdoor_inspection"));
-  const ctx = { state, trace: new Trace(), weather: new MockWeatherProvider() };
+  // As if read_activities + set_scope(schedule_review) already ran.
+  state.activitiesRead = true;
+  state.scope = { mode: "schedule_review", activityIds: new Set(["IN-1", "OUT-1"]), description: "field operations" };
+  const request = "Review tomorrow's field operations and handle anything that could be affected by changing weather.";
+  const ctx = { state, trace: new Trace(), weather: new MockWeatherProvider(), request };
   return { state, ctx };
 }
 
@@ -46,7 +50,7 @@ test("decision comes from the engine, and PROCEED cannot be written or alerted",
   assert.equal(state.updated.size, 0);
 });
 
-test("summary refuses to post until every loaded activity is evaluated", async () => {
+test("summary refuses to post until every in-scope activity is evaluated", async () => {
   const { ctx } = setup();
   await runTool("get_weather", { activity_id: "OUT-1" }, ctx);
   await runTool("evaluate_risk", { activity_id: "OUT-1" }, ctx);
