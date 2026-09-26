@@ -52,6 +52,39 @@ function describe(signal: keyof Signals, w: NormalizedWeather): string {
   }
 }
 
+export type AdvisoryLevel = "low" | "caution" | "significant";
+
+export interface ConditionsAssessment {
+  level: AdvisoryLevel;
+  /** Rule ids that fired, e.g. ["heavy_rain"]. */
+  triggered: string[];
+  /** Plain-language finding that quotes measured values and thresholds. */
+  summary: string;
+}
+
+/**
+ * Ad-hoc (untracked) requests have no activity type, so no PROCEED/FLAG/RESCHEDULE rule
+ * applies. Instead the same thresholds grade the conditions: heavy rain or high wind is
+ * significant, moderate rain or extreme heat calls for caution, anything else is low risk.
+ */
+export function assessConditions(weather: NormalizedWeather): ConditionsAssessment {
+  const signals = readSignals(weather);
+  const significant = (["heavy_rain", "high_wind"] as const).filter((s) => signals[s]);
+  const caution = (["moderate_rain", "extreme_heat"] as const).filter((s) => signals[s]);
+  if (significant.length > 0) {
+    const all = [...significant, ...caution];
+    return { level: "significant", triggered: all, summary: `Significant weather risk: ${all.map((s) => describe(s, weather)).join("; ")}.` };
+  }
+  if (caution.length > 0) {
+    return { level: "caution", triggered: caution, summary: `Some weather risk: ${caution.map((s) => describe(s, weather)).join("; ")}.` };
+  }
+  return {
+    level: "low",
+    triggered: [],
+    summary: `No significant weather risk (${weather.condition}, ${weather.precipitation_mm_per_hour.toFixed(1)} mm/h rain, ${weather.wind_speed_m_per_s.toFixed(1)} m/s wind, up to ${weather.temperature_c.toFixed(1)} °C).`,
+  };
+}
+
 const LABEL: Record<Activity["activity_type"], string> = {
   outdoor_inspection: "Outdoor inspection",
   outdoor_installation: "Outdoor installation",

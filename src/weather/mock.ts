@@ -1,5 +1,5 @@
 import type { NormalizedWeather } from "../types.ts";
-import type { WeatherProvider } from "./provider.ts";
+import type { AreaForecast, WeatherProvider } from "./provider.ts";
 import { resolveLocation } from "./locations.ts";
 
 type Scenario = Omit<NormalizedWeather, "source" | "location" | "forecast_time">;
@@ -31,6 +31,31 @@ export class MockWeatherProvider implements WeatherProvider {
       location,
       forecast_time: `${date}T${time}:00${loc.utc_offset}`,
       ...scenario,
+    };
+  }
+
+  /** TEST DATA for ad-hoc places: one fixed moderate-rain scenario, always labelled mock. */
+  async getAreaForecast(place: string, latitude: number, longitude: number, date: string, time?: string): Promise<AreaForecast> {
+    console.warn(`[MOCK WEATHER] ${place} ${date}: using test data, not a real forecast`);
+    return {
+      source: "mock",
+      latitude,
+      longitude,
+      provider_area: "simulated area",
+      date,
+      time: time ?? null,
+      slots: time ? 1 : 8,
+      worst: {
+        source: "mock",
+        location: place,
+        forecast_time: date,
+        condition: "moderate rain",
+        precipitation_mm_per_hour: 3.4,
+        wind_speed_m_per_s: 6.2,
+        wind_gust_m_per_s: 9.1,
+        temperature_c: 29.5,
+      },
+      temperature_c_min: 24.0,
     };
   }
 }

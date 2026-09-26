@@ -1,179 +1,231 @@
 # FieldFlow AI
 
-> AI Real-World Operations Continuity Agent built for the **Build With SwytchCode: Gurgaon Edition** hackathon.
+FieldFlow AI is an AI real-world operations continuity agent. You tell it what you need in plain language, such as "review tomorrow's field operations" or "check the weather for my hackathon in Gurgaon Sector 59", and it turns the request into a multi-step workflow. It reads operational records, pulls live weather, applies fixed risk rules, then updates Notion and tells the team on Slack only when that is warranted. Every external action runs through **SwytchCode**, and every step is recorded in an execution trace.
 
-FieldFlow AI is an AI-powered operations agent designed to help teams respond to real-world conditions that may affect planned field activities.
-
-Instead of simply reporting weather conditions, FieldFlow AI combines operational context, external conditions, and stakeholder information to determine what action should be taken.
-
-The agent can decide whether an activity should:
-
-- **PROCEED**
-- **FLAG**
-- **RESCHEDULE**
-
-It can then update the operational record and communicate the required action to the operations team, naming any affected external stakeholder.
+Built for **Build With SwytchCode: Gurgaon Edition**.
 
 ---
 
-## 🚀 Problem
+## The problem
 
-Field operations often depend on external conditions such as weather.
+Field teams have to combine several things before work starts:
 
-Teams may have several activities planned across different locations, and manually checking conditions, evaluating their impact, updating schedules, and informing stakeholders can be time-consuming.
+- the planned operational context (what is scheduled, where and when)
+- changing weather and environmental conditions
+- operational rules about what is safe
+- internal communication with the team
+- record keeping
 
-A weather alert by itself is not enough.
-
-The real question is:
-
-> **"What should we actually do about the planned activity?"**
-
-FieldFlow AI is designed to answer that question and take the next operational action.
+A raw weather forecast does not answer the question that matters: **"What should the operations team do next?"** FieldFlow is designed to answer it and then act on it.
 
 ---
 
-## 💡 Solution
+## What FieldFlow does
 
-FieldFlow AI acts as an autonomous operations coordination agent.
-
-Given a natural-language request such as:
+### A. Tracked field operations
 
 > "Review tomorrow's field operations and handle anything that could be affected by changing weather."
 
-the agent can:
+```
+Notion planned activities → OpenWeather → deterministic decision engine
+  → Notion update (only if needed) → Slack notification → explainable result
+```
 
-1. Read planned activities from **Notion**
-2. Retrieve relevant weather information using **OpenWeather**
-3. Analyze the potential impact on each activity
-4. Apply activity-specific operational rules
-5. Decide whether the activity should **PROCEED, FLAG, or RESCHEDULE**
-6. Update the relevant activity in **Notion**
-7. Notify the internal team through **Slack**
-8. Gmail is an optional extension for stakeholder context and external communication; it is not part of the current MVP.
-9. Return an explainable summary of the decisions and actions taken
+Each planned activity gets one decision: **PROCEED**, **FLAG** or **RESCHEDULE**. FieldFlow updates an existing Notion record, and sends a per-activity Slack alert, **only when intervention is actually required** (FLAG or RESCHEDULE). Each tracked review ends with one Slack run summary.
 
----
+### B. Ad-hoc operational requests
 
-## 🧠 Why FieldFlow AI?
+> "Check the weather for my hackathon tomorrow in Gurgaon Sector 59."
 
-FieldFlow AI is not designed as a generic weather application.
+An ad-hoc request does **not** need to exist as a Notion Field Activities record. FieldFlow:
 
-Weather is only an external signal.
+- understands the request (event, place, date)
+- resolves the place (see [Location resolution](#location-resolution))
+- retrieves the forecast from OpenWeather through SwytchCode
+- returns an ad-hoc weather assessment graded by the same fixed thresholds
+- creates an **ad-hoc operational review page in Notion**, only if you ask for it
+- posts the result to **Slack**, only if you ask for it
 
-The agent focuses on the operational question:
+An ad-hoc request is **never** mapped to an unrelated tracked activity. Your Gurgaon hackathon is not treated as FA-101 just because FA-101 is also in Gurgaon.
 
-> **"How does this external condition affect our planned work, and what should happen next?"**
-
-This makes the workflow decision-oriented rather than information-oriented.
-
-### Key capabilities
-
-- Multi-activity operational analysis
-- Activity-specific decision logic
-- External condition awareness
-- Context-aware decision making
-- Automated operational updates
-- Internal team communication
-- Affected external stakeholders named in team alerts
-- Explainable decision trail
-- Multi-step agentic workflow
+After any completed result you can click **Send this result to my Gmail** to email it to your connected account. This only happens when you click; nothing is emailed automatically.
 
 ---
 
-## 🔄 Agent Workflow
+## Why it is an AI agent
 
-```text
-                    User Request
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ Understand Request  │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ Read Activities     │
-              │      Notion         │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ Get Weather Data    │
-              │    OpenWeather      │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ Analyze Impact      │
-              │ Activity + Context  │
-              └──────────┬──────────┘
-                         │
-                         ▼
-             ┌────────────────────────┐
-             │ Operational Decision   │
-             │                        │
-             │ PROCEED                │
-             │ FLAG                   │
-             │ RESCHEDULE             │
-             └───────────┬────────────┘
-                         │
-              ┌──────────┴──────────┐
-              ▼                     ▼
-       Update Notion          Notify Slack
-              │                     │
-              └──────────┬──────────┘
-                         │
-                         ▼
-                  Slack run summary
-                         │
-                         ▼
-                  Final Summary
+FieldFlow is not a chatbot wrapper. One Claude agent (Anthropic SDK, `claude-opus-5` unless `ANTHROPIC_MODEL` is set) runs a tool-use loop over ten guarded tools:
+
+| Phase | What happens |
+|---|---|
+| **OBSERVE** | Understand the request and read the operational context from Notion |
+| **REASON** | Declare the scope (`schedule_review`, `specific_activities`, `adhoc` or `not_tracked`) and decide which tools are needed |
+| **DECIDE** | Evaluate the weather impact with **deterministic code**, not the model |
+| **ACT** | Update Notion and/or notify Slack when appropriate |
+| **VERIFY** | Return an execution trace, recorded by the tools themselves, plus a plain-language result |
+
+The model understands the request, picks the workflow and tools, interprets the tool outputs and writes the explanations. The model never makes the operational decisions or sets the thresholds. It only refers to activities by ID, so locations, times, weather readings, decisions and Notion status values all come from code.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    U[User request] --> A[Claude agent<br/>Anthropic SDK]
+    A --> S{set_scope<br/>validated in code}
+    S -->|schedule_review / specific_activities| T1[Notion: read Field Activities]
+    T1 --> T2[OpenWeather forecast<br/>per activity]
+    T2 --> T3[Decision engine<br/>PROCEED / FLAG / RESCHEDULE]
+    T3 -->|FLAG or RESCHEDULE| T4[Notion: update activity]
+    T4 --> T5[Slack: per-activity alert]
+    T3 --> T6[Slack: run summary]
+    S -->|adhoc| H1[Place directory<br/>or labelled agent estimate]
+    H1 --> H2[OpenWeather forecast<br/>for the place]
+    H2 --> H3[Ad-hoc assessment<br/>low / caution / significant]
+    H3 -->|if requested| H4[Notion: create ad-hoc review page]
+    H3 -->|if requested| H5[Slack: ad-hoc update]
+    S -->|not_tracked| N[Explain, take no action]
+    R[Completed result] -->|user clicks| G[Gmail: email result]
+
+    subgraph SwytchCode[All external calls run through SwytchCode]
+      T1
+      T2
+      T4
+      T5
+      T6
+      H2
+      H4
+      H5
+      G
+    end
 ```
 
 ---
 
-## 🛠️ How it's built
+## SwytchCode integrations
 
-- **Node.js + TypeScript**, Express server exposing `POST /run` ([docs/API-CONTRACT.md](docs/API-CONTRACT.md)).
-- **Claude agent**: one tool-use loop using `@anthropic-ai/sdk`. The model is `claude-opus-5` unless you set `ANTHROPIC_MODEL`. The model chooses the tool calls and writes the explanations; tools identify activities only by `activity_id`, so locations, times, weather, decisions and Notion status values come from code.
-- **Deterministic decision engine**: thresholds are explicit constants in code; the LLM explains decisions but never makes or overrides them ([docs/DECISION-ENGINE.md](docs/DECISION-ENGINE.md)).
-- **Swytchcode runtime** (`@swytchcode/runtime`) executes every external call ([docs/SWYTCHCODE-APIS.md](docs/SWYTCHCODE-APIS.md)):
+**SwytchCode is the execution layer for all the external integrations.** Every Notion, OpenWeather, Slack and Gmail call goes through the SwytchCode runtime (`@swytchcode/runtime`) using these methods:
 
-| Integration | Swytchcode methods |
-|---|---|
-| Notion | `notion.children.get`, `notion.databas.get`, `notion.data_source.get`, `notion.query.create`, `notion.page.update`, `notion.page.create` (seeding) |
-| OpenWeather | `openweather.2.5.forecast.list` (key passed as the `appid` input, see the API doc) |
-| Slack | `slack.conversations.list.list`, `slack.chat.postmessage.create` |
+| Integration | What FieldFlow uses it for | SwytchCode methods |
+|---|---|---|
+| **Notion** | Read planned Field Activities; update tracked records when required; create ad-hoc operational review pages on request; seeding | `notion.children.get`, `notion.databas.get`, `notion.data_source.get`, `notion.query.create`, `notion.page.update`, `notion.page.create` |
+| **OpenWeather** | Live 5-day / 3-hour forecast for tracked locations and resolved ad-hoc places | `openweather.2.5.forecast.list` |
+| **Slack** | Per-activity FLAG/RESCHEDULE alerts, the run summary, and ad-hoc updates on request | `slack.conversations.list.list`, `slack.chat.postmessage.create` |
+| **Gmail** | Email a completed result to the connected account, only when you click the button | `gmail.user.profile.get`, `gmail.user.send.create1` |
 
-- **Weather modes**: live OpenWeather by default; `WEATHER_PROVIDER=mock` uses clearly labelled simulated weather to demonstrate FLAG/RESCHEDULE.
+Full details and verified behaviour are in [docs/SWYTCHCODE-APIS.md](docs/SWYTCHCODE-APIS.md). One note: SwytchCode sends the managed OpenWeather key as a header, but OpenWeather reads it only from the `appid` query parameter. FieldFlow therefore passes `OPENWEATHER_API_KEY` from `.env` as the `appid` input to the same SwytchCode method.
+
+### A multi-step chain, not isolated buttons
+
+Each step's output drives the next one:
+
+- **Tracked:** request → `Notion.read` (activities, locations, times) → `OpenWeather.forecast` (for each activity's own location and start time) → **decision engine** → `Notion.update` (only FLAG/RESCHEDULE) → `Slack.post` (alerts for those activities, then the run summary).
+- **Ad-hoc:** request → **place resolution** → `OpenWeather.forecast` (at the resolved coordinates) → **weather assessment** → `Notion.create` review page (if requested, containing the assessment) → `Slack.post` (if requested, containing the assessment).
 
 ---
 
-## ⚙️ Setup
+## Location resolution
 
-Prerequisites: Node.js and npm (tested with Node 24), the Swytchcode CLI (`swy`), an Anthropic API key, an OpenWeather API key (free plan works), a Notion workspace and a Slack workspace.
+SwytchCode's OpenWeather integration accepts **coordinates only**. It has no geocoding method and no place-name parameter, and FieldFlow does **not** geocode at runtime.
+
+- **Tracked activities** use a fixed location table (`src/weather/locations.ts`) for the six demo cities.
+- **Ad-hoc places** are resolved from a separate **place directory** (`src/weather/places.ts`). Its coordinates were looked up once in OpenStreetMap and pinned in the file:
+  - **Gurgaon Sector 59:** 28.4030162, 77.1066682 (OpenStreetMap node 2735984441). "Gurugram Sector 59" and "Sector 59, Gurugram" also match; bare "Sector 59" deliberately does not, because Noida also has one.
+  - **Rohini, Delhi:** 28.7063083, 77.1087892 (OpenStreetMap relation 21182288).
+- **Any other place** falls back to the agent's own coordinate estimate, which is labelled "estimated by the agent" everywhere it appears.
+
+The trace, the Notion review, the Slack post, the email and the UI all show where the coordinates came from, and the area name OpenWeather reports for them. There is **no traffic, route or commute integration**. If you mention where you're coming from, it's treated as context only.
+
+---
+
+## Decision engine
+
+The LLM never invents thresholds. [`src/decision/engine.ts`](src/decision/engine.ts) applies fixed rules. Details are in [docs/DECISION-ENGINE.md](docs/DECISION-ENGINE.md).
+
+| Signal | Threshold |
+|---|---|
+| Moderate rain | ≥ 2.5 mm/h (and < 7.6) |
+| Heavy rain | ≥ 7.6 mm/h |
+| High wind | sustained ≥ 10.8 m/s **or** gusts ≥ 17.2 m/s |
+| Extreme heat | ≥ 40 °C |
+
+| Activity type | RESCHEDULE | FLAG | PROCEED |
+|---|---|---|---|
+| `outdoor_inspection` | heavy rain | high wind or extreme heat | otherwise |
+| `outdoor_installation` | heavy rain or high wind | moderate rain | otherwise |
+| `indoor` | — | — | always |
+
+Ad-hoc requests have no activity type, so the same thresholds grade them instead: heavy rain or high wind is **significant**, moderate rain or extreme heat is **caution**, and anything else is **low**.
+
+---
+
+## Safety and guardrails
+
+These rules are enforced in code, not only in the prompt:
+
+- Ad-hoc requests are never mapped to an unrelated tracked activity, and location alone cannot select a tracked activity.
+- Tracked-activity tools only act on activities inside the scope declared with `set_scope`.
+- A whole-schedule review is refused when the request introduces its own untracked event, place or route.
+- PROCEED activities are never written to Notion and never get a per-activity Slack alert.
+- Ad-hoc Notion and Slack actions only happen when the request asks for them.
+- Gmail sends only on an explicit click, once per result; repeats are refused and a failed send can be retried.
+- The UI only shows an action as done if its trace step succeeded, and tool failures are reported as failures.
+- Simulated weather (`WEATHER_PROVIDER=mock`) is labelled as simulated everywhere.
+- No traffic, route or commute analysis is claimed.
+- API keys are masked in error messages, and secrets stay in `.env`, which is gitignored.
+
+---
+
+## Tech stack
+
+Node.js (≥ 22; developed on 24) · TypeScript · Express · Anthropic SDK (`@anthropic-ai/sdk`) · `@swytchcode/runtime` · Zod · SwytchCode integrations: OpenWeather, Notion, Slack, Gmail. The frontend is a single dependency-free HTML page served by the backend.
+
+---
+
+## Setup
+
+**1. Install**
 
 ```bash
 npm install
+```
+
+**2. Swytchcode CLI.** Install the CLI (`npm install -g swytchcode`, or see cli.swytchcode.com), then log in and fetch the provider bundles declared in `.swytchcode/tooling.json`:
+
+```bash
 swy login
-swy bootstrap                   # fetch the provider bundles declared in .swytchcode/tooling.json
+swy bootstrap
+```
+
+**3. Connect providers.** Credentials are stored locally by the CLI.
+
+```bash
 swy auth connect notion
 swy auth connect slack
 swy auth connect openweather
-swy auth status                 # notion, slack, openweather should be listed
+swy auth connect gmail          # optional: only needed for "Send this result to my Gmail"
+swy auth status
 ```
 
-**Notion:** create a page, and in it a database titled **Field Activities** with these columns:
-`activity_id` (title), `activity_name`, `location`, `start_time`, `stakeholder`, `notes` (text), `date` (date),
-`activity_type`, `priority`, `status` (select). Share it with the Swytchcode Notion connection and put the page id in
-`NOTION_ROOT_PAGE_ID`.
+**4. Notion.** Create a page containing a database titled **Field Activities** with these columns: `activity_id` (title); `activity_name`, `location`, `start_time`, `stakeholder`, `notes` (text); `date` (date); `activity_type`, `priority`, `status` (select). Share the page with the SwytchCode Notion connection. Ad-hoc review pages are created under this same page.
 
-**Slack:** create `#field-ops` (or set `SLACK_CHANNEL`) and run `/invite @swytchcode` in it.
+**5. Slack.** Create `#field-ops` (or set `SLACK_CHANNEL`) and run `/invite @swytchcode` in it.
 
-**Environment:** copy `.env.example` to `.env` (gitignored) and set `ANTHROPIC_API_KEY` and `OPENWEATHER_API_KEY`.
-Optional: `ANTHROPIC_MODEL`, `WEATHER_PROVIDER=mock`, `SLACK_CHANNEL`, `NOTION_ROOT_PAGE_ID`, `NOTION_TABLE_TITLE`, `PORT` (default 3000).
+**6. Environment.** Copy `.env.example` to `.env`, which is gitignored:
 
-**Seed the demo activities** from `test-data/activities.json`:
+| Variable | Required | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Claude agent |
+| `OPENWEATHER_API_KEY` | yes | Passed as `appid` to the SwytchCode OpenWeather method |
+| `ANTHROPIC_MODEL` | no | Default `claude-opus-5` |
+| `WEATHER_PROVIDER` | no | `mock` for labelled simulated weather |
+| `SLACK_CHANNEL` | no | Default `field-ops` |
+| `NOTION_ROOT_PAGE_ID` | no | The page that holds Field Activities |
+| `NOTION_TABLE_TITLE` | no | Default `Field Activities` |
+| `PORT` | no | Default `3000` |
+
+**7. Seed the demo activities** from `test-data/activities.json`:
 
 ```bash
 npx tsx scripts/seed-notion.ts
@@ -181,29 +233,78 @@ npx tsx scripts/seed-notion.ts
 
 ---
 
-## ▶️ Run
+## Run
 
 ```bash
 npm run typecheck
 npm test
-npm run dev                     # http://localhost:3000
+npm run dev          # or: npm start
 ```
+
+Open **http://localhost:3000**, type a request, and click **RUN FIELDFLOW**. Or call the API directly:
 
 ```bash
 curl -s -X POST http://localhost:3000/run -H "Content-Type: application/json" \
   -d '{"request":"Review tomorrow'"'"'s field operations and handle anything that could be affected by changing weather."}'
 ```
 
-**Simulated-weather demo:** set `WEATHER_PROVIDER=mock` in `.env` (or in the shell) and restart `npm run dev`.
-The same run then shows 1 RESCHEDULE, 2 FLAG and 3 PROCEED, with every weather step labelled simulated.
+```bash
+curl -s -X POST http://localhost:3000/run -H "Content-Type: application/json" \
+  -d '{"request":"Check the weather for my hackathon tomorrow in Gurgaon Sector 59."}'
+```
 
-Useful scripts:
+**Mock weather:** set `WEATHER_PROVIDER=mock` and restart. Tracked reviews then show 1 RESCHEDULE, 2 FLAG and 3 PROCEED, with every weather step labelled simulated.
 
-| Command | Purpose |
+Useful scripts: `scripts/seed-notion.ts [--reset]` (restore the demo rows), `scripts/show-activities.ts` (print Notion state), `scripts/run-agent.ts "<request>"` (one run from the terminal), `scripts/weather-check.ts`, `scripts/notion-check.ts`, `scripts/slack-test.ts`.
+
+---
+
+## API
+
+| Endpoint | Purpose |
 |---|---|
-| `npx tsx scripts/run-agent.ts "<request>"` | Run the agent once from the terminal |
-| `npx tsx scripts/show-activities.ts` | Print current Notion status and notes |
-| `npx tsx scripts/seed-notion.ts --reset` | Restore all seeded activities to `planned` |
-| `npx tsx scripts/notion-check.ts` | Verify Notion read + update round trip |
-| `npx tsx scripts/slack-test.ts` | Post a Slack test message |
-| `npx tsx scripts/weather-check.ts` | Live forecast + decision for each seed activity (no writes) |
+| `POST /run` `{ "request": "…" }` | Runs the agent and returns `request`, `status`, `summary`, `steps`, `activities`, `agent_summary`, `weather_provider`, `model`, `run_id`, `scope` and `adhoc` |
+| `POST /email-result` `{ "run_id": "…" }` | Emails that completed result to the connected Gmail account, once; the agent is not re-run |
+| `GET /health` | Liveness check |
+| `GET /` | The FieldFlow UI |
+
+Full contract: [docs/API-CONTRACT.md](docs/API-CONTRACT.md).
+
+---
+
+## Testing
+
+```bash
+npm test             # 49 tests
+npm run typecheck
+```
+
+The tests cover:
+
+- **Decision engine:** every rule branch and the threshold edges.
+- **Tracked workflow guards:** unknown activity IDs, the order of steps, PROCEED never being written, and summary counts.
+- **Scope safety:** the exact hackathon prompt, no proxy records, rejection of location-only matches, and natural-language schedule questions.
+- **Ad-hoc workflow:** assessment levels, forecast summarising, and Notion/Slack only when requested.
+- **Place resolution:** directory matches, the ambiguous "Sector 59", and the labelled fallback.
+- **Gmail:** email content, the MIME encoding, and send-once / retry-after-failure / in-flight protection.
+
+None of the tests call Notion, Slack or Gmail.
+
+---
+
+## Hackathon demo
+
+1. Show the Notion **Field Activities** table (six planned activities for tomorrow).
+2. Ask: *"Review tomorrow's field operations and handle anything that could be affected by changing weather."* Show Notion → OpenWeather → decision engine → Slack in the agent rail and the execution trace.
+3. Ask: *"Check the weather for my hackathon tomorrow in Gurgaon Sector 59. Please record the operational review in Notion and update the team on Slack."* Show the live ad-hoc result, the new Notion review page and the Slack update.
+4. Point out that FA-101 (also in Gurgaon) was **not** used as a proxy, and that the Field Activities rows did not change.
+5. Optionally, click **Send this result to my Gmail**.
+
+---
+
+## Security and limitations
+
+- Never commit `.env` or API keys.
+- This is a hackathon demo, not a production service. `/run` and `/email-result` have no authentication or rate limiting, so add both before exposing the server publicly.
+- Completed results are kept in memory (the last 50 runs) for the Gmail action, so they are lost on restart.
+- The CLI stores SwytchCode provider credentials on the machine where you connected them. A hosted deployment needs those credentials available on the server.

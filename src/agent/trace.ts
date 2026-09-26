@@ -5,7 +5,7 @@ export interface TraceStep {
   id: string;
   type: "tool" | "decision" | "agent";
   status: "completed" | "failed" | "skipped";
-  tool?: "notion" | "openweather" | "mock_weather" | "slack" | "decision_engine";
+  tool?: "notion" | "openweather" | "mock_weather" | "slack" | "decision_engine" | "gmail";
   action?: string;
   result?: string;
   decision?: Decision;

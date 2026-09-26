@@ -390,6 +390,46 @@
       "summary": "Gets the specified message.",
       "type": "method"
     },
+    "gmail.user.profile.get": {
+      "desc": "Gets the current user's Gmail profile.",
+      "inputs": [
+        {
+          "userId": {
+            "DEFAULT": "me",
+            "LOCATION": "path",
+            "REQUIRED": true,
+            "TYPE": "STRING"
+          }
+        }
+      ],
+      "integration": "Gmail.gmail@v1",
+      "method_hash": "877750db95c25f13fe7167630b96a8e5e5c679077118003054aea53254913731",
+      "output": {
+        "schema": {
+          "properties": {
+            "emailAddress": {
+              "required": false,
+              "type": "string"
+            },
+            "historyId": {
+              "required": false,
+              "type": "string"
+            },
+            "messagesTotal": {
+              "required": false,
+              "type": "integer"
+            },
+            "threadsTotal": {
+              "required": false,
+              "type": "integer"
+            }
+          }
+        },
+        "status": 200
+      },
+      "summary": "Gets the current user's Gmail profile.",
+      "type": "method"
+    },
     "gmail.user.send.create1": {
       "desc": "Sends the specified message to the recipients in the `To`, `Cc`, and `Bcc` headers. For more information, see [Create and send email messages](https://developers.google.com/workspace/gmail/api/guides/sending).",
       "inputs": [

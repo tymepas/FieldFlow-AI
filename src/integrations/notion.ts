@@ -131,3 +131,30 @@ export async function updateActivity(pageId: string, fields: Partial<Pick<Activi
   for (const [f, v] of Object.entries(fields)) properties[f] = encode(schema[f], v as string);
   await callTool("notion.page.update", { page_id: pageId, body: { properties } });
 }
+
+/**
+ * notion.page.create — log an ad-hoc operational review as its own page under the
+ * FieldFlow page. Ad-hoc requests are never written into the Field Activities database,
+ * so they cannot be mistaken for (or overwrite) planned activities.
+ */
+export async function createReviewPage(title: string, lines: Array<{ label: string; value: string }>): Promise<{ id: string; url?: string }> {
+  const paragraph = (label: string, value: string) => ({
+    object: "block",
+    type: "paragraph",
+    paragraph: {
+      rich_text: [
+        { type: "text", text: { content: `${label}: ` }, annotations: { bold: true } },
+        { type: "text", text: { content: value.slice(0, 1900) } },
+      ],
+    },
+  });
+  const page = await callTool("notion.page.create", {
+    body: {
+      parent: { page_id: ROOT_PAGE_ID },
+      properties: { title: { title: [{ type: "text", text: { content: title.slice(0, 200) } }] } },
+      children: lines.map((l) => paragraph(l.label, l.value)),
+    },
+  });
+  if (!page?.id) throw new Error("Notion did not return a page id");
+  return { id: page.id, url: page.url };
+}

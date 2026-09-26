@@ -6,10 +6,22 @@ import type { Activity } from "../types.ts";
  *
  * - schedule_review: the user asked to review the scheduled operations in general.
  * - specific_activities: the user named particular tracked records (by id or activity name).
- * - not_tracked: the user asked about an event/activity/location that is not a tracked record.
- *   No weather, decision, Notion or Slack actions are allowed.
+ * - adhoc: the user asked about their own event or place (not a tracked record). Weather for
+ *   that place may be checked; tracked records are never touched; Notion/Slack only if asked.
+ * - not_tracked: the request cannot be served (not a weather/operations question, or it needs
+ *   something unsupported). No weather, decision, Notion or Slack actions are allowed.
  */
-export type ScopeMode = "schedule_review" | "specific_activities" | "not_tracked";
+export type ScopeMode = "schedule_review" | "specific_activities" | "adhoc" | "not_tracked";
+
+/** Did the user explicitly ask for a Notion record? Ad-hoc Notion writes require it. */
+export function asksForNotion(request: string): boolean {
+  return /\b(notion|record|log|save)\b/i.test(request);
+}
+
+/** Did the user explicitly ask to update Slack / tell the team? Ad-hoc Slack posts require it. */
+export function asksForSlack(request: string): boolean {
+  return /\b(slack|team|notify|alert)\b/i.test(request);
+}
 
 export interface RunScope {
   mode: ScopeMode;
@@ -87,6 +99,9 @@ export function resolveScope(
 ): RunScope {
   const description = input.requested_description.trim();
   switch (input.mode) {
+    case "adhoc":
+      return { mode: "adhoc", activityIds: new Set(), description };
+
     case "not_tracked":
       return { mode: "not_tracked", activityIds: new Set(), description };
 
@@ -97,7 +112,7 @@ export function resolveScope(
       const subjects = [...new Set([...declared, ...untrackedSubjects(request, loaded)])];
       if (subjects.length > 0) {
         throw new Error(
-          `The request is about something that is not a tracked record (${subjects.join(", ")}), so a schedule review would answer a different question. Use mode not_tracked (or specific_activities for tracked records the user named); do not broaden the request into a schedule review.`,
+          `The request is about something that is not a tracked record (${subjects.join(", ")}), so a schedule review would answer a different question. Use mode adhoc for the user's own event or place (or specific_activities for tracked records the user named); do not broaden the request into a schedule review.`,
         );
       }
       const inScope = loaded.filter((a) => !input.date || a.date === input.date);

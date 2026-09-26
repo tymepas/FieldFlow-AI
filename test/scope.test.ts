@@ -60,7 +60,7 @@ test("hackathon prompt: no closest-record proxy, no schedule broadening, not_tra
   const steps = ctx.trace.steps;
   assert.equal(steps.length, 1);
   assert.equal(steps[0].action, "set_scope");
-  assert.match(steps[0].result!, /Not tracked: "hackathon at Gurgaon Sector 59"/);
+  assert.match(steps[0].result!, /Not tracked: "hackathon at Gurgaon Sector 59" is outside what FieldFlow can act on/);
 });
 
 test("demo request still reviews all six tomorrow activities", async () => {

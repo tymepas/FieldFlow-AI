@@ -1,6 +1,6 @@
 import { callTool } from "../swytch.ts";
 import type { NormalizedWeather } from "../types.ts";
-import type { WeatherProvider } from "./provider.ts";
+import type { AreaForecast, WeatherProvider } from "./provider.ts";
 import { resolveLocation } from "./locations.ts";
 
 /**
@@ -54,6 +54,65 @@ export class OpenWeatherProvider implements WeatherProvider {
       temperature_c: slot.main.temp,
     };
   }
+
+  async getAreaForecast(place: string, latitude: number, longitude: number, date: string, time?: string): Promise<AreaForecast> {
+    const res = await callTool("openweather.2.5.forecast.list", { lat: latitude, lon: longitude, units: "metric", appid: this.apiKey });
+    const offsetSec: number = res.city?.timezone ?? 0;
+    const area = [res.city?.name, res.city?.country].filter(Boolean).join(", ") || "unnamed area";
+    return summarizeForecast("openweather", place, latitude, longitude, area, res.list ?? [], offsetSec, date, time);
+  }
+}
+
+/**
+ * Reduce OpenWeather 2.5 forecast slots (3-hourly) to one local date — or the slot nearest a
+ * local time — keeping worst-case values so the assessment errs on the side of caution.
+ */
+export function summarizeForecast(
+  source: AreaForecast["source"],
+  place: string,
+  latitude: number,
+  longitude: number,
+  providerArea: string,
+  slots: any[],
+  offsetSec: number,
+  date: string,
+  time?: string,
+): AreaForecast {
+  const localDate = (dt: number) => new Date((dt + offsetSec) * 1000).toISOString().slice(0, 10);
+  const onDate = slots.filter((s) => localDate(s.dt) === date);
+  if (onDate.length === 0) {
+    const range = slots.length ? `${localDate(slots[0].dt)} – ${localDate(slots[slots.length - 1].dt)}` : "none";
+    throw new Error(`No forecast available for ${date} (forecast covers ${range}).`);
+  }
+  let chosen = onDate;
+  if (time) {
+    const target = Date.parse(`${date}T${time}:00Z`) / 1000 - offsetSec;
+    chosen = [onDate.reduce((best, s) => (Math.abs(s.dt - target) < Math.abs(best.dt - target) ? s : best))];
+  }
+  const rain = chosen.map((s) => (s.rain?.["3h"] ?? 0) / 3);
+  const gusts = chosen.map((s) => s.wind?.gust).filter((g): g is number => typeof g === "number");
+  const temps = chosen.map((s) => s.main.temp as number);
+  const conditions = [...new Set(chosen.map((s) => s.weather?.[0]?.description ?? "unknown"))];
+  return {
+    source,
+    latitude,
+    longitude,
+    provider_area: providerArea,
+    date,
+    time: time ?? null,
+    slots: chosen.length,
+    worst: {
+      source,
+      location: place,
+      forecast_time: time ? toLocalIso(chosen[0].dt, offsetSec) : date,
+      condition: conditions.join(", "),
+      precipitation_mm_per_hour: Math.max(...rain),
+      wind_speed_m_per_s: Math.max(...chosen.map((s) => s.wind?.speed ?? 0)),
+      wind_gust_m_per_s: gusts.length ? Math.max(...gusts) : null,
+      temperature_c: Math.max(...temps),
+    },
+    temperature_c_min: Math.min(...temps),
+  };
 }
 
 function toLocalIso(unixSec: number, offsetSec: number): string {

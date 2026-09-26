@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import Anthropic, {
   APIConnectionError,
   APIConnectionTimeoutError,
@@ -23,10 +24,18 @@ Scope — the tracked operational scope is exactly the records in the Notion Fie
 - schedule_review: when the user asks about the scheduled operations in general — e.g. what is affected, whether anything needs to change, or to review a day — without introducing an event, place or route of their own.
 - In set_scope, list in untracked_subjects every specific event, activity, place or route the user mentioned that is not a tracked record.
 - specific_activities: only for tracked records the user explicitly named (by activity id or activity name).
-- not_tracked: when the user asks about an event, activity or location that is not a tracked record. Never substitute a similar or "closest" record (for example one in the same city) as a proxy, and never broaden the request into a full schedule review. Take no weather, decision, Notion or Slack action; explain that the item is not tracked in the Notion field activities.
-- Weather is only available for the locations and start times of tracked records. You cannot check arbitrary places, routes or commutes; say so plainly instead of implying you did.
+- adhoc: when the user asks about their own event, visit or place that is not a tracked record (e.g. "I have a hackathon tomorrow in Gurgaon Sector 59, check the weather", "check the weather for Gurgaon tomorrow"). Never substitute a similar or "closest" tracked record (for example one in the same city) and never broaden the request into a full schedule review.
+- not_tracked: when the request cannot be served at all (not a weather/operations question). Take no action and explain why.
+- There is no traffic or route integration. Where someone is coming from (e.g. "coming from Rohini") is context only: check the destination's weather and never claim to have analysed traffic, route or commute.
 
-Workflow for an in-scope request:
+Workflow for an adhoc request:
+1. read_activities, then set_scope with mode adhoc.
+2. get_location_weather once, with the place as the user named it and the date they meant (the time only if they gave one). Places in FieldFlow's place directory are resolved automatically; for any other place also pass your best latitude/longitude. Mention the provider's area name and how the coordinates were obtained (location_resolution).
+3. Its assessment (low / caution / significant) uses the same fixed thresholds as tracked activities; do not override it.
+4. Only if the user asked to record/log it in Notion: record_review_in_notion. Only if the user asked to update Slack / tell the team: post_team_update. Never create or modify a Field Activities record for an adhoc request.
+5. Finish with a short plain-language answer: the weather, what it means for their plan, and which actions were actually taken.
+
+Workflow for a tracked request (schedule_review or specific_activities):
 1. Work out which date(s) the request covers, then call read_activities (with a date filter when the request names one), then set_scope.
 2. For each in-scope activity: get_weather, then evaluate_risk.
 3. evaluate_risk is a deterministic rules engine with fixed thresholds. Its decision is final: never override, soften or second-guess it, and never invent thresholds.
@@ -58,6 +67,32 @@ export interface RunResponse {
   agent_summary: string;
   weather_provider: string;
   model: string;
+  /** Identifies this completed run for follow-up actions such as POST /email-result. */
+  run_id: string;
+  /** The scope the agent declared (null if it never got that far). */
+  scope: { mode: string; description: string } | null;
+  /** Ad-hoc review result, present only for adhoc requests that fetched weather. */
+  adhoc: {
+    place: string;
+    date: string;
+    time: string | null;
+    provider_area: string;
+    /** How the coordinates were obtained (place directory, or agent estimate). */
+    location_resolution: string;
+    latitude: number;
+    longitude: number;
+    weather_source: string;
+    condition: string;
+    precipitation_mm_per_hour_max: number;
+    wind_speed_m_per_s_max: number;
+    wind_gust_m_per_s_max: number | null;
+    temperature_c_min: number;
+    temperature_c_max: number;
+    assessment_level: string;
+    assessment: string;
+    notion_recorded: boolean;
+    slack_notified: boolean;
+  } | null;
 }
 
 export async function runAgent(request: string, opts: { weather?: WeatherProvider } = {}): Promise<RunResponse> {
@@ -145,6 +180,9 @@ export async function runAgent(request: string, opts: { weather?: WeatherProvide
     agent_summary: agentSummary,
     weather_provider: weather.name,
     model: MODEL,
+    run_id: randomUUID(),
+    scope: state.scope ? { mode: state.scope.mode, description: state.scope.description } : null,
+    adhoc: adhocResult(state),
   };
 }
 
@@ -189,9 +227,34 @@ function logAgentFailure(error: unknown): void {
 }
 
 function toolProvider(name: string): TraceStep["tool"] {
-  if (name === "read_activities" || name === "update_activity") return "notion";
-  if (name === "get_weather") return "openweather";
+  if (name === "read_activities" || name === "update_activity" || name === "record_review_in_notion") return "notion";
+  if (name === "get_weather" || name === "get_location_weather") return "openweather";
   if (name === "set_scope") return undefined;
-  if (name === "notify_team" || name === "post_run_summary") return "slack";
+  if (name === "notify_team" || name === "post_run_summary" || name === "post_team_update") return "slack";
   return "decision_engine";
+}
+
+function adhocResult(state: RunState): RunResponse["adhoc"] {
+  const { place, resolution, forecast: f, assessment: a, notionPage, slackTs } = state.adhoc;
+  if (!place || !f || !a) return null;
+  return {
+    place,
+    date: f.date,
+    time: f.time,
+    provider_area: f.provider_area,
+    location_resolution: resolution ?? "estimated by the agent",
+    latitude: f.latitude,
+    longitude: f.longitude,
+    weather_source: f.source,
+    condition: f.worst.condition,
+    precipitation_mm_per_hour_max: f.worst.precipitation_mm_per_hour,
+    wind_speed_m_per_s_max: f.worst.wind_speed_m_per_s,
+    wind_gust_m_per_s_max: f.worst.wind_gust_m_per_s,
+    temperature_c_min: f.temperature_c_min,
+    temperature_c_max: f.worst.temperature_c,
+    assessment_level: a.level,
+    assessment: a.summary,
+    notion_recorded: !!notionPage,
+    slack_notified: !!slackTs,
+  };
 }

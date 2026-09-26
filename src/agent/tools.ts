@@ -1,11 +1,12 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { decide, THRESHOLDS } from "../decision/engine.ts";
-import { readActivities, updateActivity } from "../integrations/notion.ts";
+import { assessConditions, decide, THRESHOLDS, type ConditionsAssessment } from "../decision/engine.ts";
+import { createReviewPage, readActivities, updateActivity } from "../integrations/notion.ts";
 import { postMessage } from "../integrations/slack.ts";
-import type { WeatherProvider } from "../weather/provider.ts";
+import type { AreaForecast, WeatherProvider } from "../weather/provider.ts";
 import type { Activity, DecisionResult, NormalizedWeather } from "../types.ts";
 import type { Trace } from "./trace.ts";
-import { resolveScope, type RunScope } from "./scope.ts";
+import { asksForNotion, asksForSlack, resolveScope, type RunScope } from "./scope.ts";
+import { resolvePlace } from "../weather/places.ts";
 
 /** Everything the run has learned so far. Tools read from here so the model cannot
  *  supply locations, times, weather or decisions itself — only activity ids. */
@@ -20,10 +21,20 @@ export interface RunState {
   activitiesRead: boolean;
   /** Records this run may act on, declared via set_scope and validated in code. */
   scope?: RunScope;
+  /** Ad-hoc (untracked place/event) review state, only used when scope.mode is "adhoc". */
+  adhoc: {
+    place?: string;
+    /** How the coordinates were obtained, shown wherever they are. */
+    resolution?: string;
+    forecast?: AreaForecast;
+    assessment?: ConditionsAssessment;
+    notionPage?: { id: string; url?: string };
+    slackTs?: string;
+  };
 }
 
 export function newRunState(): RunState {
-  return { activities: new Map(), weather: new Map(), decisions: new Map(), updated: new Set(), notified: new Set(), summaryPosted: false, activitiesRead: false };
+  return { activities: new Map(), weather: new Map(), decisions: new Map(), updated: new Set(), notified: new Set(), summaryPosted: false, activitiesRead: false, adhoc: {} };
 }
 
 const activityIdInput = {
@@ -48,11 +59,11 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "set_scope",
     description:
-      "Declare which tracked Notion records this request is about. Call once, after read_activities and before any other tool. schedule_review: the user asked to review the scheduled operations in general (optionally one date). specific_activities: the user explicitly named tracked records (by id or activity name). not_tracked: the user asked about an event, activity or location that is not a tracked record; no weather, decision, Notion or Slack actions are then allowed. Never pick a similar or closest record as a proxy.",
+      "Declare what this request is about. Call once, after read_activities and before any other tool. schedule_review: the user asked about the scheduled operations in general (optionally one date). specific_activities: the user explicitly named tracked records (by id or activity name). adhoc: the user asked about their own event or place that is not a tracked record (e.g. weather for a venue or a visit); tracked records are never touched, weather for that place is checked with get_location_weather. not_tracked: the request cannot be served (not a weather/operations question, or it needs something unsupported); no actions are allowed. Never pick a similar or closest tracked record as a proxy.",
     input_schema: {
       type: "object",
       properties: {
-        mode: { type: "string", enum: ["schedule_review", "specific_activities", "not_tracked"] },
+        mode: { type: "string", enum: ["schedule_review", "specific_activities", "adhoc", "not_tracked"] },
         activity_ids: { type: "array", items: { type: "string" }, description: "For specific_activities: the ids the user referred to." },
         date: { type: "string", description: "For schedule_review: limit the review to this ISO date (YYYY-MM-DD)." },
         requested_description: { type: "string", description: "Short description of what the user asked about, in their terms." },
@@ -122,7 +133,63 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
     strict: true,
   },
+  {
+    name: "get_location_weather",
+    description:
+      "adhoc scope only. Real forecast for the user's own place on a date (whole day, or the slot nearest a time if they gave one), graded by the same fixed thresholds as tracked activities. Places in FieldFlow's place directory (e.g. Gurgaon Sector 59) are resolved to verified coordinates automatically. For any other place, supply your best latitude/longitude; it is labelled as an estimate. The result shows the area name the weather provider reports. Never use a tracked activity's location as a stand-in. Call once.",
+    input_schema: {
+      type: "object",
+      properties: {
+        place: { type: "string", description: "The place as the user described it, e.g. 'Gurgaon Sector 59'." },
+        latitude: { type: "number", description: "Only if the place may not be in the directory: best-estimate latitude (-90..90)." },
+        longitude: { type: "number", description: "Only if the place may not be in the directory: best-estimate longitude (-180..180)." },
+        date: { type: "string", description: "Local ISO date (YYYY-MM-DD) the user asked about." },
+        time: { type: "string", description: "Local HH:MM if the user named a time; omit for the whole day." },
+      },
+      required: ["place", "date"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "record_review_in_notion",
+    description:
+      "adhoc scope only, and only if the user asked to record/log it in Notion. Creates an 'Ad-hoc operational review' page under the FieldFlow page (never a Field Activities record) with the request, place, date, weather, assessment and requested actions. Call once, after get_location_weather.",
+    input_schema: {
+      type: "object",
+      properties: { operational_note: { type: "string", description: "One or two sentences: what the weather means for the user's plan." } },
+      required: ["operational_note"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "post_team_update",
+    description:
+      "adhoc scope only, and only if the user asked to update Slack / tell the team. Posts the ad-hoc weather review to #field-ops. Call once, after get_location_weather.",
+    input_schema: {
+      type: "object",
+      properties: { message: { type: "string", description: "One or two sentences for the team: what the weather means for the user's plan." } },
+      required: ["message"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ];
+
+function requireAdhoc(state: RunState, needForecast: boolean): NonNullable<RunState["adhoc"]> {
+  if (!state.scope) throw new Error("Call set_scope first.");
+  if (state.scope.mode !== "adhoc") throw new Error(`This tool is only for adhoc requests; the scope is ${state.scope.mode}.`);
+  if (needForecast && !state.adhoc.forecast) throw new Error("Call get_location_weather first.");
+  return state.adhoc;
+}
+
+function fmtArea(f: AreaForecast, place: string, resolution: string): string {
+  const when = f.time ? `${f.date} ${f.time}` : `${f.date} (whole day, ${f.slots} forecast slots)`;
+  const w = f.worst;
+  const gust = w.wind_gust_m_per_s === null ? "" : `, gusts up to ${w.wind_gust_m_per_s.toFixed(1)} m/s`;
+  return `${place} ${when} [${f.provider_area}; coordinates ≈${f.latitude.toFixed(3)}, ${f.longitude.toFixed(3)} ${resolution}]: ${w.condition}; rain up to ${w.precipitation_mm_per_hour.toFixed(1)} mm/h, wind up to ${w.wind_speed_m_per_s.toFixed(1)} m/s${gust}, ${f.temperature_c_min.toFixed(1)}–${w.temperature_c.toFixed(1)} °C`;
+}
 
 function requireActivity(state: RunState, id: string): Activity {
   const a = state.activities.get(id);
@@ -173,7 +240,7 @@ export async function runTool(
       trace.add({
         type: "agent", action: "set_scope", status: "completed",
         result: scope.mode === "not_tracked"
-          ? `Not tracked: "${scope.description}" is not in the Notion field activities; no operational actions will be taken.`
+          ? `Not tracked: "${scope.description}" is outside what FieldFlow can act on; no operational actions were taken.`
           : `${scope.mode}: ${ids.length} activit${ids.length === 1 ? "y" : "ies"} in scope (${ids.join(", ") || "none"})`,
       });
       return { mode: scope.mode, activity_ids: ids };
@@ -250,6 +317,7 @@ export async function runTool(
       if (state.summaryPosted) throw new Error("Summary already posted in this run.");
       if (!state.scope) throw new Error("Call set_scope first.");
       if (state.scope.mode === "not_tracked") throw new Error("No summary is posted when the request is not about a tracked record.");
+      if (state.scope.mode === "adhoc") throw new Error("post_run_summary is for tracked reviews; for adhoc requests use post_team_update, and only if the user asked for Slack.");
       const pending = [...state.scope.activityIds].filter((id) => !state.decisions.has(id));
       if (pending.length) throw new Error(`Not every activity is evaluated yet: ${pending.join(", ")}`);
       const counts = summarize(state);
@@ -267,6 +335,84 @@ export async function runTool(
       const res = await postMessage(text);
       state.summaryPosted = true;
       trace.add({ type: "tool", tool: "slack", action: "send_summary", status: "completed", result: `run summary posted to #field-ops (ts ${res.ts})` });
+      return { posted: true, ts: res.ts };
+    }
+
+    case "get_location_weather": {
+      const adhoc = requireAdhoc(state, false);
+      if (adhoc.forecast) throw new Error("get_location_weather was already called for this request.");
+      const place = String(input.place ?? "").trim();
+      if (!place) throw new Error("place is required.");
+      // Directory first (verified coordinates); otherwise the agent's labelled estimate.
+      const known = resolvePlace(place);
+      let lat: number, lon: number, resolution: string;
+      if (known) {
+        [lat, lon, resolution] = [known.latitude, known.longitude, `from FieldFlow's place directory (${known.source})`];
+      } else {
+        lat = Number(input.latitude);
+        lon = Number(input.longitude);
+        if (input.latitude === undefined || input.longitude === undefined) {
+          throw new Error(`"${place}" is not in FieldFlow's place directory; supply your best latitude/longitude for it.`);
+        }
+        if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+          throw new Error("latitude/longitude out of range.");
+        }
+        resolution = "estimated by the agent";
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date ?? "")) throw new Error("date must be YYYY-MM-DD.");
+      if (input.time !== undefined && !/^\d{2}:\d{2}$/.test(input.time)) throw new Error("time must be HH:MM.");
+      const forecast = await weather.getAreaForecast(place, lat, lon, input.date, input.time);
+      const assessment = assessConditions(forecast.worst);
+      Object.assign(adhoc, { place, forecast, assessment, resolution });
+      trace.add({
+        type: "tool", tool: forecast.source === "mock" ? "mock_weather" : "openweather",
+        action: forecast.source === "mock" ? "area_forecast_simulated" : "area_forecast", status: "completed",
+        result: fmtArea(forecast, place, resolution) + (forecast.source === "mock" ? " [SIMULATED]" : ""),
+      });
+      trace.add({ type: "decision", tool: "decision_engine", status: "completed", reason: `Ad-hoc weather assessment (${assessment.level}): ${assessment.summary}` });
+      return { place, location_resolution: resolution, forecast, assessment, thresholds: THRESHOLDS };
+    }
+
+    case "record_review_in_notion": {
+      const adhoc = requireAdhoc(state, true);
+      if (!asksForNotion(ctx.request)) throw new Error("The user did not ask to record this in Notion; do not write to Notion.");
+      if (adhoc.notionPage) throw new Error("This ad-hoc review was already recorded in Notion.");
+      const f = adhoc.forecast!, a = adhoc.assessment!;
+      const requested = [asksForNotion(ctx.request) && "Notion record", asksForSlack(ctx.request) && "Slack update"].filter(Boolean).join(", ");
+      const page = await createReviewPage(`Ad-hoc operational review · ${adhoc.place} · ${f.date}`, [
+        { label: "Record type", value: "Ad-hoc operational review (not a planned Field Activity)" },
+        { label: "Request", value: ctx.request },
+        { label: "Location", value: `${adhoc.place} (weather area: ${f.provider_area}; coordinates ≈${f.latitude.toFixed(3)}, ${f.longitude.toFixed(3)}, ${adhoc.resolution})` },
+        { label: "Date", value: f.time ? `${f.date} ${f.time}` : `${f.date} (whole day)` },
+        { label: "Weather", value: fmtArea(f, adhoc.place!, adhoc.resolution!).split("]: ")[1] ?? f.worst.condition },
+        { label: "Assessment", value: `${a.level.toUpperCase()}: ${a.summary}` },
+        { label: "Operational note", value: String(input.operational_note ?? "") },
+        { label: "Actions requested", value: requested || "none" },
+        { label: "Weather source", value: f.source === "mock" ? "SIMULATED (demo scenario, not a live forecast)" : "OpenWeather (live forecast via SwytchCode)" },
+        { label: "Recorded", value: new Date().toISOString() },
+      ]);
+      adhoc.notionPage = page;
+      trace.add({ type: "tool", tool: "notion", action: "create_review_page", status: "completed", result: `Ad-hoc review page created in Notion (${page.id})` });
+      return { recorded: true, page_id: page.id };
+    }
+
+    case "post_team_update": {
+      const adhoc = requireAdhoc(state, true);
+      if (!asksForSlack(ctx.request)) throw new Error("The user did not ask to update Slack; do not post.");
+      if (adhoc.slackTs) throw new Error("The team was already updated for this request.");
+      const f = adhoc.forecast!, a = adhoc.assessment!;
+      const icon = a.level === "significant" ? ":red_circle:" : a.level === "caution" ? ":large_orange_circle:" : ":large_blue_circle:";
+      const text = [
+        `${icon} *Ad-hoc weather review* · ${adhoc.place} · ${f.time ? `${f.date} ${f.time}` : f.date}`,
+        `*Weather:* ${fmtArea(f, adhoc.place!, adhoc.resolution!).split("]: ")[1] ?? f.worst.condition}`,
+        `*Assessment:* ${a.level.toUpperCase()} — ${a.summary}`,
+        `*Note:* ${String(input.message ?? "")}`,
+        adhoc.notionPage ? "*Notion:* ad-hoc review recorded" : "",
+        f.source === "mock" ? ":warning: _Simulated weather (demo scenario), not a live forecast._" : "_Weather: live OpenWeather forecast._",
+      ].filter(Boolean).join("\n");
+      const res = await postMessage(text);
+      adhoc.slackTs = res.ts;
+      trace.add({ type: "tool", tool: "slack", action: "send_message", status: "completed", result: `Ad-hoc weather review posted to #field-ops (ts ${res.ts})` });
       return { posted: true, ts: res.ts };
     }
 
