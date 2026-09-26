@@ -20,6 +20,33 @@ A raw weather forecast does not answer the question that matters: **"What should
 
 ---
 
+## Ad-hoc operational mode
+
+FieldFlow supports two complementary workflows.
+
+### Planned Field Operations
+
+The agent reads the existing planned activities from the Notion **Field Activities** database, checks live weather for each one's location and start time, evaluates each activity with the fixed decision rules (PROCEED / FLAG / RESCHEDULE), and takes the operational actions that are warranted: it updates the record and alerts Slack only for FLAG or RESCHEDULE.
+
+### Ad-Hoc Operational Requests
+
+You can also ask about a real-world situation that is **not** already a planned Field Activity:
+
+> "I have an event tomorrow in Gurgaon Sector 59. I'm coming from Rohini, Delhi. Please check the weather, record the operational review in Notion, and update the team on Slack."
+
+```
+Natural-language request
+  → identify the requested location and context
+  → retrieve live weather through SwytchCode + OpenWeather
+  → assess the operational risk with the same fixed thresholds (low / caution / significant)
+  → record an ad-hoc operational review in Notion, only if you ask for it
+  → update the team on Slack, only if you ask for it
+```
+
+An ad-hoc request never creates or changes a Field Activities record, and never borrows an unrelated planned activity as a stand-in. When you ask for it to be recorded, the review goes on its own separate "Ad-hoc operational review" page under the FieldFlow Notion page. Where you're coming from (Rohini here) is context only: FieldFlow does no traffic, routing or commute analysis. Details: [B. Ad-hoc operational requests](#b-ad-hoc-operational-requests) and [Location resolution](#location-resolution).
+
+---
+
 ## What FieldFlow does
 
 ### A. Tracked field operations
@@ -63,7 +90,7 @@ If you **deny** permission, FieldFlow says so and asks you to allow location acc
 
 ---
 
-After any completed planned-operations or ad-hoc result you can click **Send this result to my Gmail** to email it to your connected account. This only happens when you click; nothing is emailed automatically.
+**Optional Gmail action:** after a planned-operations or ad-hoc result is generated, you can choose to send it to your connected Gmail account with **Send this result to my Gmail**. Email is not sent automatically; it happens only when you click.
 
 ---
 
@@ -131,7 +158,7 @@ flowchart TD
 | **Notion** | Read planned Field Activities; update tracked records when required; create ad-hoc operational review pages on request; seeding | `notion.children.get`, `notion.databas.get`, `notion.data_source.get`, `notion.query.create`, `notion.page.update`, `notion.page.create` |
 | **OpenWeather** | Live 5-day / 3-hour forecast for tracked locations and resolved ad-hoc places; current conditions for a browser-shared location | `openweather.2.5.forecast.list`, `openweather.2.5.weather.list` |
 | **Slack** | Per-activity FLAG/RESCHEDULE alerts, the run summary, and ad-hoc updates on request | `slack.conversations.list.list`, `slack.chat.postmessage.create` |
-| **Gmail** | Email a completed result to the connected account, only when you click the button | `gmail.user.profile.get`, `gmail.user.send.create1` |
+| **Gmail** | Optional, user-initiated: emails a completed result to the connected account only when you click **Send this result to my Gmail**; never automatic | `gmail.user.profile.get`, `gmail.user.send.create1` |
 
 Full details and verified behaviour are in [docs/SWYTCHCODE-APIS.md](docs/SWYTCHCODE-APIS.md). One note: SwytchCode sends the managed OpenWeather key as a header, but OpenWeather reads it only from the `appid` query parameter. FieldFlow therefore passes `OPENWEATHER_API_KEY` from `.env` as the `appid` input to the same SwytchCode method.
 
